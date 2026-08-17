@@ -79,39 +79,29 @@ export function isConfigured(): boolean {
 /* ---------------------------------------------------------------- query -- */
 
 /**
- * Builds one Google-Maps-style search term out of the Lead Finder inputs
- * without repeating information the user already typed.
- * "Dentists near Gota, Ahmedabad" + location "Ahmedabad, India"
- *   -> "dentists, Gota, Ahmedabad, India"
+ * Builds the Google Maps search term from the Lead Finder input.
+ * The user's search query is authoritative for search intent and sent exactly
+ * as entered, subject only to normal whitespace sanitization.
  */
 export function buildSearchTerm(request: LeadSearchRequest): string {
-  const raw = request.query.trim();
-  const split = /\b(?:near|in|around|based in)\b/i.exec(raw);
-  const subjectFromQuery = split ? raw.slice(0, split.index).trim() : raw;
-  const locationFromQuery = split ? raw.slice(split.index + split[0].length).trim() : "";
-
-  const candidates = [
-    request.industry?.trim() || subjectFromQuery,
-    request.keyword?.trim() ?? "",
-    locationFromQuery,
-    request.location?.trim() ?? "",
-  ];
-
-  const parts: string[] = [];
-  for (const candidate of candidates) {
-    for (const piece of candidate
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean)) {
-      const key = piece.toLowerCase();
-      const already = parts.some(
-        (p) =>
-          p.toLowerCase() === key || p.toLowerCase().includes(key) || key.includes(p.toLowerCase()),
-      );
-      if (!already) parts.push(piece);
+  const rawQuery = request.query.trim().replace(/\s+/g, " ");
+  if (rawQuery) {
+    const rawLoc = request.location?.trim().replace(/\s+/g, " ");
+    if (rawLoc && !rawQuery.toLowerCase().includes(rawLoc.toLowerCase())) {
+      return `${rawQuery}, ${rawLoc}`;
     }
+    return rawQuery;
   }
-  return parts.join(", ") || raw;
+
+  const parts = [
+    request.industry?.trim(),
+    request.keyword?.trim(),
+    request.location?.trim(),
+  ]
+    .filter(Boolean)
+    .map((p) => p!.replace(/\s+/g, " "));
+
+  return parts.join(", ") || "";
 }
 
 /* ------------------------------------------------------------ transport -- */
@@ -422,12 +412,11 @@ function firstEmail(value: unknown): string | null {
   return candidate ?? null;
 }
 
-import { parseAddressLocation, sanitizeAddress } from "@/lib/normalize";
+import { normalizeBusinessLead, parseAddressLocation, sanitizeAddress } from "@/lib/normalize";
 
 /** Maps one scraper record (CSV row or SaaS JSON object) onto our RawLead. */
 export function mapScraperRecord(record: Record<string, unknown>): RawLead {
   const compAddr = maybeJson(record["complete_address"]);
-  const website = str(record["website"]);
 
   const rawAddr = sanitizeAddress(str(record["address"]));
   const streetAddr = sanitizeAddress(str(compAddr?.["street"]));
@@ -466,10 +455,9 @@ export function mapScraperRecord(record: Record<string, unknown>): RawLead {
     if (value !== null && value !== undefined && value !== "") attributes[key] = value;
   }
 
-  return {
+  const rawInput = {
     company_name: str(record["title"]) ?? str(record["name"]) ?? "",
-    website,
-    domain: website,
+    website: str(record["website"]),
     category: str(record["category"]),
     description: str(record["descriptions"]) ?? str(record["about_summary"]),
     address: finalAddress,
@@ -483,11 +471,61 @@ export function mapScraperRecord(record: Record<string, unknown>): RawLead {
     review_count: num(record["review_count"]),
     business_type: str(record["category"]),
     opening_status: str(record["status"]),
-    booking_url: str(record["reservations"]),
-    ordering_url: str(record["order_online"]),
-    contact_page_url: null,
+    booking_url: record["reservations"] ?? record["booking_url"],
+    ordering_url: record["order_online"] ?? record["ordering_url"],
     source_url: str(record["link"]),
     attributes,
+  };
+
+  const normalized = normalizeBusinessLead(rawInput);
+  if (!normalized) {
+    return {
+      company_name: rawInput.company_name,
+      website: null,
+      domain: null,
+      category: null,
+      description: null,
+      address: finalAddress,
+      city: null,
+      region: null,
+      country: null,
+      postal_code: null,
+      phone: null,
+      email: null,
+      rating: null,
+      review_count: null,
+      business_type: null,
+      opening_status: null,
+      booking_url: null,
+      ordering_url: null,
+      contact_page_url: null,
+      source_url: null,
+      attributes,
+    };
+  }
+
+  return {
+    company_name: normalized.company_name,
+    website: normalized.website,
+    domain: normalized.domain,
+    category: normalized.category,
+    description: normalized.description,
+    address: normalized.address,
+    city: normalized.city,
+    region: normalized.region,
+    country: normalized.country,
+    postal_code: normalized.postal_code,
+    phone: normalized.phone,
+    email: normalized.email,
+    rating: normalized.rating,
+    review_count: normalized.review_count,
+    business_type: normalized.business_type,
+    opening_status: normalized.opening_status,
+    booking_url: normalized.booking_url,
+    ordering_url: normalized.ordering_url,
+    contact_page_url: null,
+    source_url: normalized.source_url,
+    attributes: { ...attributes, ...normalized.attributes },
   };
 }
 

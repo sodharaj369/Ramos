@@ -46,13 +46,11 @@ export function composeLocation(loc: StructuredLocation): string {
 }
 
 export function validateLocation(
-  loc: StructuredLocation,
-  hasStates: boolean,
-  hasCities: boolean,
+  _loc: StructuredLocation,
+  _hasStates: boolean,
+  _hasCities: boolean,
 ): string | null {
-  if (!loc.countryCode) return "Select a country.";
-  if (hasStates && !loc.stateCode) return "Select a state or province.";
-  if (hasCities && !loc.cityName) return "Select a city.";
+  // City, state, and country selection are optional and must not block searches.
   return null;
 }
 

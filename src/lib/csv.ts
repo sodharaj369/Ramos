@@ -55,6 +55,79 @@ export function toCsv(rows: Record<string, unknown>[], columns?: string[]): stri
   return [cols.join(","), ...rows.map((r) => cols.map((c) => escape(r[c])).join(","))].join("\n");
 }
 
+export function formatLeadsToCsv(leads: Record<string, unknown>[]): string {
+  const headers = [
+    "Company",
+    "Phone",
+    "Website",
+    "Email",
+    "Email Status",
+    "Address",
+    "City",
+    "State / Region",
+    "Country",
+    "Postal Code",
+    "Industry",
+    "Business Type",
+    "Rating",
+    "Reviews",
+    "Opening Status",
+    "Price Range",
+    "Booking URL",
+    "Ordering URL",
+    "Menu URL",
+    "Google Maps URL",
+    "Place ID",
+    "Imported At",
+  ];
+
+  const escapeCell = (val: unknown) => {
+    if (val === null || val === undefined) return "";
+    const str = typeof val === "object" ? JSON.stringify(val) : String(val);
+    if (!str.length) return "";
+    if (/[",\n\r]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const rows = [headers.join(",")];
+  for (const lead of leads) {
+    if (!lead) continue;
+    const company_name = lead.company_name ?? lead.company ?? "";
+    if (!company_name) continue;
+
+    rows.push(
+      [
+        escapeCell(company_name),
+        escapeCell(lead.phone),
+        escapeCell(lead.website),
+        escapeCell(lead.email),
+        escapeCell(lead.email_status),
+        escapeCell(lead.address),
+        escapeCell(lead.city),
+        escapeCell(lead.region),
+        escapeCell(lead.country),
+        escapeCell(lead.postal_code),
+        escapeCell(lead.category),
+        escapeCell(lead.business_type || lead.category),
+        escapeCell(lead.rating),
+        escapeCell(lead.review_count),
+        escapeCell(lead.opening_status),
+        escapeCell(lead.price_range),
+        escapeCell(lead.booking_url),
+        escapeCell(lead.ordering_url),
+        escapeCell(lead.menu_url),
+        escapeCell(lead.source_url),
+        escapeCell(lead.place_id),
+        escapeCell(lead.discovered_at || lead.created_at || new Date().toISOString()),
+      ].join(","),
+    );
+  }
+
+  return rows.join("\r\n");
+}
+
 export function downloadCsv(filename: string, content: string) {
   const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);

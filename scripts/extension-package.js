@@ -167,10 +167,14 @@ function packageExtension() {
     fs.mkdirSync(publicDir, { recursive: true });
   }
 
-  const outZipPath = path.join(publicDir, "sales-intel-maps-connector.zip");
-  fs.writeFileSync(outZipPath, zipBuffer);
+  const versionedZipPath = path.join(publicDir, `sales-intel-maps-connector-v${manifest.version}.zip`);
+  const legacyZipPath = path.join(publicDir, "sales-intel-maps-connector.zip");
 
-  console.log(`✅ Successfully packaged Chrome Extension to: ${outZipPath}`);
+  fs.writeFileSync(versionedZipPath, zipBuffer);
+  fs.writeFileSync(legacyZipPath, zipBuffer);
+
+  console.log(`✅ Successfully packaged Chrome Extension to: ${versionedZipPath}`);
+  console.log(`✅ Legacy copy maintained at: ${legacyZipPath}`);
   console.log(`   Total packaged files: ${zipFiles.length}`);
   console.log(`   ZIP size: ${(zipBuffer.length / 1024).toFixed(1)} KB`);
 }

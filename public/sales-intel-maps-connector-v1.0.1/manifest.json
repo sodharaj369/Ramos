@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "Sales Intel Maps Connector",
+  "version": "1.0.3",
+  "description": "Discover public business information from Google Maps in your own browser and import it into Sales Intelligence.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://www.google.com/maps*",
+    "https://*.google.com/maps*",
+    "https://maps.google.com/*",
+    "https://biz-intel-tool.lovable.app/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sales Intel Maps Connector",
+    "default_icon": { "128": "icon.png" }
+  },
+  "icons": { "48": "icon.png", "128": "icon.png" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.google.com/maps*",
+        "https://*.google.com/maps*",
+        "https://maps.google.com/*"
+      ],
+      "js": [
+        "shared/constants.js",
+        "shared/environment.js",
+        "shared/schema.js",
+        "content/maps/dom-utils.js",
+        "content/maps/selectors.js",
+        "content/maps/validators.js",
+        "content/maps/address-parser.js",
+        "content/maps/result-card-extractor.js",
+        "content/maps/detail-extractor.js",
+        "content/maps/maps-adapter.js",
+        "discovery.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://biz-intel-tool.lovable.app/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "shared/constants.js",
+        "shared/environment.js",
+        "content/bridge.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://biz-intel-tool.lovable.app/*",
+      "http://localhost/*",
+      "http://127.0.0.1/*"
+    ]
+  }
+}

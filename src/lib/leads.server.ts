@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RawLead } from "@/lib/domain-types";
 import {
   domainFromEmail,
+  normalizeBusinessLead,
   normalizeCompanyName,
   normalizeDomain,
   normalizeEmail,
@@ -30,42 +31,46 @@ export interface UpsertContext {
 }
 
 export function buildLeadRow(raw: RawLead, ctx: UpsertContext) {
-  const website = normalizeWebsite(raw.website ?? null);
-  const domain = normalizeDomain(raw.domain ?? raw.website ?? null) ?? domainFromEmail(raw.email);
-  const email = normalizeEmail(raw.email ?? null);
-  const phone = raw.phone?.trim() || null;
+  const norm = normalizeBusinessLead(raw as Record<string, any>);
+
+  const company_name = norm?.company_name || raw.company_name.trim();
+  const website = norm?.website ?? normalizeWebsite(raw.website ?? null);
+  const domain = norm?.domain ?? normalizeDomain(raw.domain ?? raw.website ?? null) ?? domainFromEmail(raw.email);
+  const email = norm?.email ?? normalizeEmail(raw.email ?? null);
+  const phone = norm?.phone ?? (raw.phone?.trim() || null);
   const nowIso = new Date().toISOString();
+
   return {
-    company_name: raw.company_name.trim(),
+    company_name,
     website,
     domain,
     normalized_domain: domain,
-    normalized_name: normalizeCompanyName(raw.company_name) ?? raw.company_name.toLowerCase(),
-    normalized_city: normalizeText(raw.city ?? null),
-    category: raw.category ?? null,
-    description: raw.description ?? null,
-    address: raw.address ?? null,
-    city: raw.city ?? null,
-    region: raw.region ?? null,
-    country: raw.country ?? null,
-    postal_code: raw.postal_code ?? null,
+    normalized_name: normalizeCompanyName(company_name) ?? company_name.toLowerCase(),
+    normalized_city: normalizeText(norm?.city ?? raw.city ?? null),
+    category: norm?.category ?? raw.category ?? null,
+    description: norm?.description ?? raw.description ?? null,
+    address: norm?.address ?? raw.address ?? null,
+    city: norm?.city ?? raw.city ?? null,
+    region: norm?.region ?? raw.region ?? null,
+    country: norm?.country ?? raw.country ?? null,
+    postal_code: norm?.postal_code ?? raw.postal_code ?? null,
     phone,
     normalized_phone: normalizePhone(phone),
     email,
     normalized_email: email,
     location_count: raw.location_count ?? null,
-    rating: raw.rating ?? null,
-    review_count: raw.review_count ?? null,
+    rating: norm?.rating ?? raw.rating ?? null,
+    review_count: norm?.review_count ?? raw.review_count ?? null,
     social_urls: raw.social_urls ?? {},
     contact_page_url: raw.contact_page_url ?? null,
-    booking_url: raw.booking_url ?? null,
-    ordering_url: raw.ordering_url ?? null,
+    booking_url: norm?.booking_url ?? raw.booking_url ?? null,
+    ordering_url: norm?.ordering_url ?? raw.ordering_url ?? null,
     has_ecommerce: raw.has_ecommerce ?? null,
-    business_type: raw.business_type ?? null,
-    opening_status: raw.opening_status ?? null,
-    attributes: raw.attributes ?? {},
+    business_type: norm?.business_type ?? raw.business_type ?? null,
+    opening_status: norm?.opening_status ?? raw.opening_status ?? null,
+    attributes: norm?.attributes ?? raw.attributes ?? {},
     source: ctx.source,
-    source_url: raw.source_url ?? null,
+    source_url: norm?.source_url ?? raw.source_url ?? null,
     search_query: ctx.searchQuery ?? null,
     created_by: ctx.userId,
     discovered_at: nowIso,

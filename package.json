@@ -1,5 +1,6 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "sales-intel",
+  "version": "1.0.6",
   "private": true,
   "sideEffects": false,
   "type": "module",

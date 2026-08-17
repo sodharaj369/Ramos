@@ -11,7 +11,7 @@ import { useJobRunner } from "@/hooks/use-job-runner";
 import { deleteLeads, exportLeads, listLeads, type LeadFilters } from "@/lib/leads.functions";
 import { createVerificationJob } from "@/lib/jobs.functions";
 import { listLeadsForVerification } from "@/lib/verification.functions";
-import { downloadCsv, toCsv } from "@/lib/csv";
+import { downloadCsv, formatLeadsToCsv, parseCsv, toCsv } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -193,7 +193,7 @@ function LeadsPage() {
       toast.error("Nothing to export.");
       return;
     }
-    downloadCsv(`leads-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(data as any));
+    downloadCsv(`leads-${new Date().toISOString().slice(0, 10)}.csv`, formatLeadsToCsv(data as any));
   };
 
   const removeSelected = async () => {

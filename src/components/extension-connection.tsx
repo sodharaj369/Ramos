@@ -3,10 +3,16 @@ import { ChevronDown, ChevronUp, Download, Info, Puzzle, RefreshCw } from "lucid
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_EXTENSION_ID, useExtensionBridge } from "@/hooks/use-extension-bridge";
+import { APP_VERSION, EXTENSION_VERSION } from "@/lib/version";
 
 /** Downloads the packaged extension through fetch so preview auth applies. */
 function downloadExtension() {
-  fetch("/sales-intel-maps-connector.zip")
+  const versionedName = `sales-intel-maps-connector-v${EXTENSION_VERSION}.zip`;
+  fetch(`/${versionedName}`)
+    .then((res) => {
+      if (!res.ok) return fetch("/sales-intel-maps-connector.zip");
+      return res;
+    })
     .then((res) => {
       if (!res.ok) throw new Error(`Download failed: ${res.status}`);
       return res.blob();
@@ -14,7 +20,7 @@ function downloadExtension() {
     .then((blob) => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "sales-intel-maps-connector.zip";
+      a.download = versionedName;
       a.click();
       URL.revokeObjectURL(a.href);
     })
@@ -46,6 +52,12 @@ export function ExtensionConnection({ compact = false }: { compact?: boolean }) 
     statusBadgeText = "⚠ Connection error";
     statusBadgeClass = "bg-destructive/15 text-destructive font-medium";
   }
+
+  const extVersionText = bridge.version
+    ? `v${bridge.version}`
+    : notInstalled
+      ? "Not installed"
+      : "v1.0.1 · Disconnected";
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -124,7 +136,7 @@ export function ExtensionConnection({ compact = false }: { compact?: boolean }) 
 
         <Button size="sm" variant="outline" onClick={downloadExtension}>
           <Download className="size-4 mr-1.5" />
-          Download extension
+          Download extension (v{EXTENSION_VERSION})
         </Button>
 
         <Button
@@ -144,11 +156,12 @@ export function ExtensionConnection({ compact = false }: { compact?: boolean }) 
       {showDebug ? (
         <div className="mt-4 rounded-md border border-border/60 bg-muted/40 p-3 text-xs space-y-1 text-muted-foreground font-mono">
           <div className="font-semibold text-foreground font-sans text-xs mb-1.5">
-            Extension Diagnostics
+            Sales Intel Connection Diagnostics
           </div>
-          <div>Status: <span className="text-foreground font-medium">{bridge.status}</span></div>
-          <div>Environment: <span className="text-foreground font-medium">{bridge.environment}</span></div>
-          <div>Extension Version: <span className="text-foreground font-medium">{bridge.version || "Unknown"}</span></div>
+          <div>Web App: <span className="text-foreground font-medium">v{APP_VERSION}</span></div>
+          <div>Extension: <span className="text-foreground font-medium">{extVersionText}</span></div>
+          <div>Environment: <span className="text-foreground font-medium">{bridge.environment || "LOCAL"}</span></div>
+          <div>Connection: <span className="text-foreground font-medium">{connected ? "Connected" : "Disconnected"}</span></div>
           <div>Extension ID: <span className="text-foreground font-medium">{DEFAULT_EXTENSION_ID}</span></div>
           <div>Last Checked: <span className="text-foreground font-medium">{bridge.lastChecked ? bridge.lastChecked.toLocaleTimeString() : "Never"}</span></div>
         </div>
