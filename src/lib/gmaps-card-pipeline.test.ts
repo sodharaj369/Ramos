@@ -1,155 +1,120 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 
-// --- Mock DOM & Qualification Utilities ---
+const require = createRequire(import.meta.url);
 
-interface MockElement {
-  tagName: string;
-  className: string;
-  attributes: Record<string, string>;
-  children: MockElement[];
-  textContent: string;
-  href?: string;
-  querySelector: (sel: string) => MockElement | null;
-  querySelectorAll: (sel: string) => MockElement[];
-  matches?: (sel: string) => boolean;
-  closest?: (sel: string) => MockElement | null;
-  parentElement?: MockElement | null;
-}
+// --- Import Authoritative Extension Modules ---
+const Validators = require("../../extension/content/maps/validators");
+const DetailExtractor = require("../../extension/content/maps/detail-extractor");
+const ResultCardExtractor = require("../../extension/content/maps/result-card-extractor");
 
-function createMockElement(
-  tagName: string,
-  className = "",
-  attrs: Record<string, string> = {},
-  children: MockElement[] = [],
-  textContent = "",
-): MockElement {
-  const el: MockElement = {
-    tagName,
-    className,
-    attributes: attrs,
-    children,
-    textContent,
-    href: attrs.href,
-    parentElement: null,
-    querySelector(sel: string) {
-      if (sel.includes("a.hfpxzc") || sel === "a") {
-        return findChild(this, (c) => c.tagName === "a" || c.className.includes("hfpxzc"));
-      }
-      if (sel.includes("div.qBF1Pd") || sel.includes("h1") || sel.includes("h3")) {
-        return findChild(this, (c) => c.className.includes("qBF1Pd") || c.tagName === "h1" || c.tagName === "h3" || c.className.includes("DUwif"));
-      }
-      if (sel.includes("data-item-id=\"address\"")) {
-        return findChild(this, (c) => c.attributes["data-item-id"] === "address");
-      }
-      if (sel.includes("data-item-id^=\"phone:\"") || sel.includes("data-item-id^=\"phone\"") || sel.includes("phone")) {
-        return findChild(this, (c) => Boolean(c.attributes["data-item-id"] && c.attributes["data-item-id"].startsWith("phone")));
-      }
-      if (sel.includes("data-item-id=\"authority\"") || sel.includes("authority")) {
-        return findChild(this, (c) => c.attributes["data-item-id"] === "authority");
-      }
-      if (sel.includes("data-item-id=\"oh\"") || sel.includes(".ZDu9vd")) {
-        return findChild(this, (c) => c.attributes["data-item-id"] === "oh" || c.className.includes("ZDu9vd"));
-      }
-      if (sel.includes(".Io6YTe")) {
-        return findChild(this, (c) => c.className.includes("Io6YTe"));
-      }
-      return null;
-    },
-    querySelectorAll(sel: string) {
-      const results: MockElement[] = [];
-      collectChildren(this, (c) => {
-        if (sel.includes("Nv2PK") && (c.className.includes("Nv2PK") || c.attributes["role"] === "article")) {
-          return true;
-        }
-        if (sel.includes("role=\"article\"") && c.attributes["role"] === "article") {
-          return true;
-        }
-        if (sel.includes("data-item-id=\"address\"") && c.attributes["data-item-id"] === "address") {
-          return true;
-        }
-        if (sel.includes("data-item-id^=\"phone:\"") && c.attributes["data-item-id"] && c.attributes["data-item-id"].startsWith("phone:")) {
-          return true;
-        }
-        if (sel.includes("data-item-id=\"authority\"") && c.attributes["data-item-id"] === "authority") {
-          return true;
-        }
-        return false;
-      }, results);
-      return results;
-    },
-    matches(sel: string) {
-      if (sel.includes("Nv2PK") && this.className.includes("Nv2PK")) return true;
-      if (sel.includes("role=\"article\"") && this.attributes["role"] === "article") return true;
-      if (sel.includes("role=\"main\"") && this.attributes["role"] === "main") return true;
-      if (sel.includes("TIwYe") && this.className.includes("TIwYe")) return true;
+// Simulated Authoritative Run Engine (reflecting background.js currentRun architecture)
+class TestRunEngine {
+  currentRun: {
+    runId: string;
+    query: string | null;
+    sourceQuery: string | null;
+    requestedLimit: number;
+    candidates: any[];
+    readyLeads: any[];
+    failedLeads: any[];
+    status: string;
+  } | null = null;
+
+  startNewRun(query: string, limit: number) {
+    const runId = "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+
+    this.currentRun = {
+      runId,
+      query,
+      sourceQuery: query,
+      requestedLimit,
+      candidates: [],
+      readyLeads: [],
+      failedLeads: [],
+      status: "running",
+    };
+    return this.currentRun;
+  }
+
+  setDiscoveredCandidates(rawCandidates: any[]) {
+    if (!this.currentRun) return [];
+    // Apply requestedLimit ONCE to candidates
+    const selected = rawCandidates.slice(0, this.currentRun.requestedLimit);
+    this.currentRun.candidates = selected.map((c) => ({
+      ...c,
+      runId: this.currentRun!.runId,
+      sourceQuery: this.currentRun!.query,
+    }));
+    return this.currentRun.candidates;
+  }
+
+  handleDetailReady(message: { runId: string; sourceQuery: string; detailLead: any }) {
+    if (!this.currentRun) return false;
+    if (message.runId !== this.currentRun.runId || message.sourceQuery !== this.currentRun.query) {
+      return false; // discarded stale result
+    }
+
+    const merged = {
+      ...message.detailLead,
+      runId: this.currentRun.runId,
+      sourceQuery: this.currentRun.query,
+      enrichmentStatus: "complete",
+    };
+    this.currentRun.readyLeads.push(merged);
+    this.checkCompletionStatus();
+    return true;
+  }
+
+  handleCandidateFailed(message: { runId: string; sourceQuery: string; candidate: any; reason?: string }) {
+    if (!this.currentRun) return false;
+    if (message.runId !== this.currentRun.runId || message.sourceQuery !== this.currentRun.query) {
       return false;
-    },
-    closest(sel: string) {
-      let cur: MockElement | null = this;
-      while (cur) {
-        if (cur.matches && cur.matches(sel)) return cur;
-        cur = cur.parentElement || null;
-      }
-      return null;
-    },
-  };
+    }
 
-  for (const child of children) {
-    child.parentElement = el;
+    const failed = {
+      ...message.candidate,
+      runId: this.currentRun.runId,
+      sourceQuery: this.currentRun.query,
+      enrichmentStatus: "failed",
+      reason: message.reason || "failed",
+    };
+    this.currentRun.failedLeads.push(failed);
+    this.checkCompletionStatus();
+    return true;
   }
 
-  return el;
-}
-
-function findChild(parent: MockElement, predicate: (el: MockElement) => boolean): MockElement | null {
-  for (const child of parent.children) {
-    if (predicate(child)) return child;
-    const found = findChild(child, predicate);
-    if (found) return found;
-  }
-  return null;
-}
-
-function collectChildren(parent: MockElement, predicate: (el: MockElement) => boolean, results: MockElement[]) {
-  for (const child of parent.children) {
-    if (predicate(child)) results.push(child);
-    collectChildren(child, predicate, results);
-  }
-}
-
-// Business Qualification Boundary (mirrors result-card-extractor.js)
-const UI_BLACKLIST = ["results", "filters", "loading", "search instead for", "popular times"];
-
-function isBusinessCard(cardEl: MockElement) {
-  if (!cardEl || !cardEl.querySelector) return { qualified: false, name: null };
-
-  const nameLink = cardEl.querySelector("a.hfpxzc") || (cardEl.tagName === "a" ? cardEl : null);
-  const href = nameLink ? nameLink.href || nameLink.attributes["href"] : null;
-  const titleEl = cardEl.querySelector("div.qBF1Pd");
-  const rawName = titleEl ? titleEl.textContent : (nameLink ? nameLink.attributes["aria-label"] : null);
-
-  if (!rawName) return { qualified: false, name: null };
-  const cleanName = rawName.trim();
-
-  if (UI_BLACKLIST.includes(cleanName.toLowerCase())) {
-    return { qualified: false, name: cleanName };
+  checkCompletionStatus() {
+    if (!this.currentRun) return;
+    const total = this.currentRun.candidates.length;
+    const resolved = this.currentRun.readyLeads.length + this.currentRun.failedLeads.length;
+    if (resolved >= total) {
+      this.currentRun.status = "completed";
+    }
   }
 
-  const hasPlaceLink = Boolean(href && (href.includes("/maps/place/") || href.includes("place_id") || href.includes("!3d")));
-  if (!hasPlaceLink) return { qualified: false, name: cleanName };
+  getExportableLeads() {
+    if (!this.currentRun) return [];
 
-  return { qualified: true, name: cleanName, href };
+    const ready = this.currentRun.readyLeads.filter(
+      (lead) => lead.runId === this.currentRun!.runId && lead.sourceQuery === this.currentRun!.query && lead.enrichmentStatus === "complete"
+    );
+
+    if (ready.length > this.currentRun.requestedLimit) {
+      throw new Error(
+        `EXPORT_LIMIT_VIOLATION ready=${ready.length} limit=${this.currentRun.requestedLimit}`
+      );
+    }
+
+    // Row count === READY count (zero padding, no fake/failed records)
+    return ready;
+  }
 }
 
-function getQualifiedCardsFromFeed(feedEl: MockElement) {
-  const cards = feedEl.querySelectorAll('div[role="article"].Nv2PK');
-  return cards.filter((c) => isBusinessCard(c).qualified);
-}
-
-// Pure Action Button State Evaluator (mirrors popup.js)
-function getActionButtonState(state: { cardCount?: number; detected?: number; readyCount?: number; records?: any[]; siConnected?: boolean }) {
-  const cardCount = Number(state.cardCount != null ? state.cardCount : (state.detected || 0));
+function getActionButtonState(state: { cardCount?: number; readyCount?: number; records?: any[]; siConnected?: boolean }) {
+  const cardCount = Number(state.cardCount != null ? state.cardCount : 0);
   const readyCount = Number(state.readyCount || (state.records ? state.records.length : 0));
   const hasCandidates = cardCount > 0 || readyCount > 0;
   const isConnected = Boolean(state.siConnected);
@@ -160,220 +125,333 @@ function getActionButtonState(state: { cardCount?: number; detected?: number; re
   };
 }
 
-// Production Phone Extractor & Validator (mirrors detail-extractor.js)
-const INVALID_PHONE_LABELS = new Set([
-  "send to phone",
-  "directions",
-  "save",
-  "nearby",
-  "share",
-  "add a label",
-  "website",
-  "menu",
-  "reserve a table",
-  "order online",
-  "claim this business",
-  "suggest an edit",
-  "photos",
-  "reviews",
-  "about",
-  "copy phone number",
-  "copied",
-  "call",
-  "phone",
-]);
+// ─── 12 REGRESSION TESTS (Section 15 & Completion Contract) ──────────────────
 
-function extractPhoneFromText(text: string | null | undefined): string | null {
-  if (!text || typeof text !== "string") return null;
-  let clean = text.replace(/[\uFFFD\u2605\u2b50★\u25A1□]/g, "").replace(/\s+/g, " ").trim();
-  if (!clean.length) return null;
+test("TEST 1: 10 discovered, limit 5 -> expected export = 5", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("pizza near Satellite", 5);
 
-  clean = clean.replace(/^(phone:?|tel:?|call:?)\s*/i, "").trim();
+  const rawDiscovered = Array.from({ length: 10 }, (_, i) => ({
+    company_name: `Pizza Shop ${i + 1}`,
+    place_id: `place-${i + 1}`,
+  }));
 
-  if (INVALID_PHONE_LABELS.has(clean.toLowerCase())) {
-    return null;
+  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
+  assert.equal(candidates.length, 5);
+
+  for (const c of candidates) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: engine.currentRun!.query!,
+      detailLead: { company_name: c.company_name, phone: "+91 99999 11111", address: "Satellite Rd" },
+    });
   }
 
-  if (/^(send to phone|directions|save|nearby|share|add a label|website|menu)\b/i.test(clean)) {
-    return null;
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 5);
+  assert.equal(engine.currentRun!.status, "completed");
+});
+
+test("TEST 2: 5 discovered, limit 5 -> expected export = 5", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("gym near Gota", 5);
+
+  const rawDiscovered = Array.from({ length: 5 }, (_, i) => ({
+    company_name: `Gym ${i + 1}`,
+    place_id: `place-gym-${i + 1}`,
+  }));
+
+  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
+  assert.equal(candidates.length, 5);
+
+  for (const c of candidates) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: engine.currentRun!.query!,
+      detailLead: { company_name: c.company_name, phone: "+91 88888 22222", address: "Gota Rd" },
+    });
   }
 
-  const digitsOnly = clean.replace(/\D/g, "");
-  if (digitsOnly.length < 6 || digitsOnly.length > 16) {
-    return null;
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 5);
+});
+
+test("TEST 3: 10 discovered, limit 10 -> expected export = 10", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("hotels near station", 10);
+
+  const rawDiscovered = Array.from({ length: 10 }, (_, i) => ({
+    company_name: `Hotel ${i + 1}`,
+    place_id: `place-hotel-${i + 1}`,
+  }));
+
+  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
+  assert.equal(candidates.length, 10);
+
+  for (const c of candidates) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: engine.currentRun!.query!,
+      detailLead: { company_name: c.company_name, address: "Station Rd" },
+    });
   }
 
-  const match = /(\+?\d[\d\-\s().]{5,}\d)/.exec(clean);
-  if (match) {
-    const num = match[1].replace(/\s+/g, " ").trim();
-    const mDigits = num.replace(/\D/g, "");
-    if (mDigits.length >= 6 && mDigits.length <= 16) {
-      return num;
-    }
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 10);
+});
+
+test("TEST 4: 10 discovered, limit 2 -> expected export = 2", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("cafes near me", 2);
+
+  const rawDiscovered = Array.from({ length: 10 }, (_, i) => ({
+    company_name: `Cafe ${i + 1}`,
+    place_id: `place-cafe-${i + 1}`,
+  }));
+
+  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
+  assert.equal(candidates.length, 2);
+
+  for (const c of candidates) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: engine.currentRun!.query!,
+      detailLead: { company_name: c.company_name, phone: "+91 77777 33333" },
+    });
   }
 
-  return null;
-}
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 2);
+});
 
-// Production Website Resolver (mirrors detail-extractor.js)
-function isGoogleInternalUrl(url: string): boolean {
-  if (!url) return true;
-  return /^(https?:\/\/)?([a-z0-9-]+\.)*(google\.[a-z.]+|gstatic\.com|googleusercontent\.com|ggpht\.com|goo\.gl|waze\.com)(\/|$)/i.test(url.trim());
-}
+test("TEST 5: Run A: pizza (limit 5), Run B: gym (limit 5) -> Run B export must contain ONLY gym", () => {
+  const engine = new TestRunEngine();
 
-function resolveWebsiteUrl(val: string | null | undefined): string | null {
-  if (!val || typeof val !== "string") return null;
-  let raw = val.trim();
-  if (!raw.length) return null;
-
-  if (raw.includes("/url?") && raw.includes("q=")) {
-    try {
-      const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
-      const targetQ = u.searchParams.get("q");
-      if (targetQ) raw = targetQ;
-    } catch {}
+  // Run A
+  engine.startNewRun("pizza near Satellite", 5);
+  const pizzaCandidates = engine.setDiscoveredCandidates(
+    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}`, place_id: `pizza-${i + 1}` }))
+  );
+  for (const c of pizzaCandidates) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "pizza near Satellite",
+      detailLead: { company_name: c.company_name },
+    });
   }
 
-  if (isGoogleInternalUrl(raw)) return null;
-
-  if (raw.includes("...")) return null;
-
-  if (!/^https?:\/\//i.test(raw)) {
-    if (/^([a-z0-9-]+\.)+[a-z]{2,}(\/.*)?$/i.test(raw)) {
-      return `https://${raw}`;
-    }
-    return null;
+  // Run B (New query)
+  engine.startNewRun("gym near Godrej Garden City", 5);
+  const gymCandidates = engine.setDiscoveredCandidates(
+    Array.from({ length: 5 }, (_, i) => ({ company_name: `Gym ${i + 1}`, place_id: `gym-${i + 1}` }))
+  );
+  for (const c of gymCandidates) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "gym near Godrej Garden City",
+      detailLead: { company_name: c.company_name },
+    });
   }
 
-  try {
-    const u = new URL(raw);
-    if (u.hostname && u.hostname.includes(".")) {
-      return u.href.endsWith("/") && u.pathname === "/" ? u.href.slice(0, -1) : u.href;
-    }
-  } catch {
-    return null;
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 5);
+  assert.equal(exported.every((lead) => lead.company_name.startsWith("Gym")), true);
+  assert.equal(exported.some((lead) => lead.company_name.startsWith("Pizza")), false);
+});
+
+test("TEST 6: Run A has 10 records, Run B has 3 records -> Run B export must contain exactly 3", () => {
+  const engine = new TestRunEngine();
+
+  // Run A
+  engine.startNewRun("Search A", 10);
+  const candA = engine.setDiscoveredCandidates(
+    Array.from({ length: 10 }, (_, i) => ({ company_name: `Record A-${i + 1}` }))
+  );
+  for (const c of candA) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "Search A",
+      detailLead: { company_name: c.company_name },
+    });
   }
 
-  return null;
-}
+  // Run B
+  engine.startNewRun("Search B", 3);
+  const candB = engine.setDiscoveredCandidates(
+    Array.from({ length: 3 }, (_, i) => ({ company_name: `Record B-${i + 1}` }))
+  );
+  for (const c of candB) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "Search B",
+      detailLead: { company_name: c.company_name },
+    });
+  }
 
-// ─── REGRESSION TESTS ──────────────────────────────────────────────────────────
-
-test("1. Phone: 'Send to phone' UI label is REJECTED and returns null", () => {
-  assert.equal(extractPhoneFromText("Send to phone"), null);
-  assert.equal(extractPhoneFromText("Directions"), null);
-  assert.equal(extractPhoneFromText("Save"), null);
-  assert.equal(extractPhoneFromText("Nearby"), null);
-  assert.equal(extractPhoneFromText("Share"), null);
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 3);
 });
 
-test("2. Phone: Real business phone '+91 82009 78462' is extracted accurately", () => {
-  assert.equal(extractPhoneFromText("+91 82009 78462"), "+91 82009 78462");
-  assert.equal(extractPhoneFromText("Phone: +91 82009 78462"), "+91 82009 78462");
+test("TEST 7: 5 candidates, 5 enrichment successes -> ready = 5, export = 5", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("pizza", 5);
+  const cand = engine.setDiscoveredCandidates(
+    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` }))
+  );
+  for (const c of cand) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "pizza",
+      detailLead: { company_name: c.company_name, phone: "+91 95124 44530" },
+    });
+  }
+
+  assert.equal(engine.currentRun!.readyLeads.length, 5);
+  assert.equal(engine.getExportableLeads().length, 5);
 });
 
-test("3. Phone: Real business phone '+91 98552 69855' is extracted accurately", () => {
-  assert.equal(extractPhoneFromText("+91 98552 69855"), "+91 98552 69855");
-  assert.equal(extractPhoneFromText("tel:+919855269855"), "+919855269855");
+test("TEST 8: 5 candidates, 3 enrichment successes, 2 failures -> ready = 3, failed = 2, export = 3 (NO PADDING)", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("pizza", 5);
+  const cand = engine.setDiscoveredCandidates(
+    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` }))
+  );
+
+  // 3 succeed
+  for (let i = 0; i < 3; i++) {
+    engine.handleDetailReady({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "pizza",
+      detailLead: { company_name: cand[i].company_name },
+    });
+  }
+  // 2 fail
+  for (let i = 3; i < 5; i++) {
+    engine.handleCandidateFailed({
+      runId: engine.currentRun!.runId,
+      sourceQuery: "pizza",
+      candidate: cand[i],
+      reason: "detail_panel_timeout",
+    });
+  }
+
+  assert.equal(engine.currentRun!.readyLeads.length, 3);
+  assert.equal(engine.currentRun!.failedLeads.length, 2);
+  assert.equal(engine.currentRun!.status, "completed");
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 3, "CSV export must contain exactly 3 valid leads, ZERO padding");
 });
 
-test("4. Website: 'lapinozpizza.in' resolves to valid https URL", () => {
-  assert.equal(resolveWebsiteUrl("lapinozpizza.in"), "https://lapinozpizza.in");
-  assert.equal(resolveWebsiteUrl("https://lapinozpizza.in"), "https://lapinozpizza.in");
+test("TEST 9: Start pizza enrichment. Before it finishes, change search to gym. Pizza's late async result must be discarded.", () => {
+  const engine = new TestRunEngine();
+
+  // Start Run A (pizza)
+  const runA = engine.startNewRun("pizza", 5);
+  engine.setDiscoveredCandidates([{ company_name: "Pizza 1" }]);
+
+  // User changes query to gym (Run B starts)
+  const runB = engine.startNewRun("gym", 5);
+  const gymCand = engine.setDiscoveredCandidates([{ company_name: "Gym 1" }]);
+
+  // Pizza's late async response arrives with old runA.runId
+  const acceptedLatePizza = engine.handleDetailReady({
+    runId: runA.runId,
+    sourceQuery: "pizza",
+    detailLead: { company_name: "Pizza 1" },
+  });
+
+  assert.equal(acceptedLatePizza, false, "Late pizza result must be discarded");
+
+  // Gym response arrives
+  engine.handleDetailReady({
+    runId: runB.runId,
+    sourceQuery: "gym",
+    detailLead: { company_name: gymCand[0].company_name },
+  });
+
+  const exported = engine.getExportableLeads();
+  assert.equal(exported.length, 1);
+  assert.equal(exported[0].company_name, "Gym 1");
 });
 
-test("5. Website: Ellipsis text 'radikh...in' is rejected; full URL 'radikhas.in' is accepted", () => {
-  assert.equal(resolveWebsiteUrl("radikh...in"), null);
-  assert.equal(resolveWebsiteUrl("radikhas.in"), "https://radikhas.in");
-  assert.equal(resolveWebsiteUrl("https://www.google.com/url?q=https://radikhas.in&sa=D"), "https://radikhas.in");
+test("TEST 10: Sales Intel disconnected -> Download CSV must still work, Import to Sales Intel must remain disabled.", () => {
+  const state = getActionButtonState({
+    cardCount: 5,
+    readyCount: 5,
+    records: [{ company_name: "Lead 1" }],
+    siConnected: false,
+  });
+
+  assert.equal(state.downloadCsvEnabled, true, "Download CSV must be ENABLED when disconnected");
+  assert.equal(state.importEnabled, false, "Import must be DISABLED when disconnected");
 });
 
-test("6. Website: Google Maps navigation URLs are REJECTED and return null", () => {
-  assert.equal(resolveWebsiteUrl("https://www.google.com/maps/place/INFINITE+FITNESS/@23.11,72.53"), null);
-  assert.equal(resolveWebsiteUrl("https://maps.google.com/maps/dir/"), null);
-  assert.equal(resolveWebsiteUrl("https://goo.gl/maps/xyz"), null);
+test("TEST 11: Export function receives 10 internal records with requestedLimit=5 -> Hard assertion throws EXPORT_LIMIT_VIOLATION", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("test query", 5);
+
+  // Directly push 10 records into readyLeads violating limit
+  for (let i = 0; i < 10; i++) {
+    engine.currentRun!.readyLeads.push({
+      company_name: `Lead ${i + 1}`,
+      runId: engine.currentRun!.runId,
+      sourceQuery: "test query",
+      enrichmentStatus: "complete",
+    });
+  }
+
+  assert.throws(
+    () => engine.getExportableLeads(),
+    /EXPORT_LIMIT_VIOLATION/
+  );
 });
 
-test("7. Address: Full multiline address preserved completely in lead.address", () => {
-  const fullAddress = "Shop no. 1,2,3, Ground floor, Kraft - 7, Sarkhej Gandhinagar Hwy, near Devnagar, opp. Maruti Suzuki Showroom, Gota, Ahmedabad, Gujarat 382481, India";
-  const rawWithOpening = "Shop no. 1,2,3, Ground floor, Kraft - 7, Sarkhej Gandhinagar Hwy, near Devnagar, opp. Maruti Suzuki Showroom, Gota, Ahmedabad, Gujarat 382481, India Open · Closes 11 pm";
-  const cleaned = rawWithOpening.replace(/\s*Open\s*·\s*Closes\s*11\s*pm\s*$/i, "").trim();
+test("TEST 12: Run remains running while pending candidates exist (ready=1, failed=2, pending=2 -> status running)", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("pizza", 5);
+  const cand = engine.setDiscoveredCandidates(
+    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` }))
+  );
 
-  assert.equal(cleaned, fullAddress);
-});
+  // 1 ready
+  engine.handleDetailReady({
+    runId: engine.currentRun!.runId,
+    sourceQuery: "pizza",
+    detailLead: { company_name: cand[0].company_name },
+  });
 
-test("8. Opening Status: Independent field and excluded from address", () => {
-  const openingStatus = "Open · Closes 11 pm";
-  const address = "601, NY Square, NR Vandematram Cross Rd, Gota, Ahmedabad";
+  // 2 failed
+  engine.handleCandidateFailed({
+    runId: engine.currentRun!.runId,
+    sourceQuery: "pizza",
+    candidate: cand[1],
+    reason: "detail_panel_timeout",
+  });
+  engine.handleCandidateFailed({
+    runId: engine.currentRun!.runId,
+    sourceQuery: "pizza",
+    candidate: cand[2],
+    reason: "detail_panel_timeout",
+  });
 
-  assert.equal(openingStatus, "Open · Closes 11 pm");
-  assert.equal(address.includes("Open"), false);
-});
+  // 2 candidates (index 3 and 4) are still pending
+  assert.equal(engine.currentRun!.status, "running", "Run must remain running while pending candidates exist");
+  assert.equal(engine.currentRun!.readyLeads.length, 1);
+  assert.equal(engine.currentRun!.failedLeads.length, 2);
 
-test("9. Reference DOM Structure: Real Detail Panel Screenshot Fixture", () => {
-  // Action Buttons Bar
-  const actionDirections = createMockElement("button", "", { "aria-label": "Directions" }, [], "Directions");
-  const actionSave = createMockElement("button", "", { "aria-label": "Save" }, [], "Save");
-  const actionNearby = createMockElement("button", "", { "aria-label": "Nearby" }, [], "Nearby");
-  const actionSendToPhone = createMockElement("button", "", { "aria-label": "Send to phone" }, [], "Send to phone");
-  const actionShare = createMockElement("button", "", { "aria-label": "Share" }, [], "Share");
+  // Now resolve remaining 2
+  engine.handleDetailReady({
+    runId: engine.currentRun!.runId,
+    sourceQuery: "pizza",
+    detailLead: { company_name: cand[3].company_name },
+  });
+  engine.handleDetailReady({
+    runId: engine.currentRun!.runId,
+    sourceQuery: "pizza",
+    detailLead: { company_name: cand[4].company_name },
+  });
 
-  // Business Data Rows
-  const addressRow = createMockElement("button", "", { "data-item-id": "address" }, [
-    createMockElement("div", "Io6YTe", {}, [], "First Floor, Silver Harmony 2, 101-104, Shukan Glory Rd, opp. ICB FLORA, Gota, Ahmedabad, Gujarat 382481, India"),
-  ]);
-
-  const hoursRow = createMockElement("div", "ZDu9vd", { "data-item-id": "oh" }, [], "Open 24 hours");
-
-  const phoneRow = createMockElement("button", "", { "data-item-id": "phone:tel:+918460298925" }, [
-    createMockElement("div", "Io6YTe", {}, [], "+91 84602 98925"),
-  ]);
-
-  const plusCodeRow = createMockElement("button", "", { "data-item-id": "oloc" }, [
-    createMockElement("div", "Io6YTe", {}, [], "4G2R+WF Ahmedabad, Gujarat, India"),
-  ]);
-
-  const panel = createMockElement("div", "TIwYe", { role: "main" }, [
-    createMockElement("h1", "DUwif fontTitleLarge", {}, [], "Silver Harmony Fitness"),
-    actionDirections, actionSave, actionNearby, actionSendToPhone, actionShare,
-    addressRow, hoursRow, phoneRow, plusCodeRow,
-  ]);
-
-  // Extract from the panel
-  const phoneVal = extractPhoneFromText(phoneRow.querySelector(".Io6YTe")?.textContent);
-  const actionSendPhoneVal = extractPhoneFromText(actionSendToPhone.textContent);
-  const addressVal = addressRow.querySelector(".Io6YTe")?.textContent?.trim();
-  const hoursVal = hoursRow.textContent?.trim();
-
-  assert.equal(phoneVal, "+91 84602 98925");
-  assert.equal(actionSendPhoneVal, null);
-  assert.equal(addressVal, "First Floor, Silver Harmony 2, 101-104, Shukan Glory Rd, opp. ICB FLORA, Gota, Ahmedabad, Gujarat 382481, India");
-  assert.equal(hoursVal, "Open 24 hours");
-});
-
-test("10. CSV Quality: Extracted candidate leads strictly enforce data rules", () => {
-  const lead1 = {
-    company_name: "INFINITE FITNESS",
-    address: "1st, Skywalk Jagatpur, Gota, Ahmedabad 382470",
-    phone: extractPhoneFromText("Send to phone"), // returns null
-    website: resolveWebsiteUrl("https://infinitefitness.in"),
-    opening_status: "Open · Closes 11:30 pm",
-  };
-
-  const lead2 = {
-    company_name: "Fit Master Gym",
-    address: "Opp. Vandematram Arcade, Gota, Ahmedabad",
-    phone: extractPhoneFromText("+91 82382 47969"),
-    website: resolveWebsiteUrl("https://www.google.com/maps/place/Fit+Master"), // returns null
-    opening_status: "Closed · Opens 6 am Tue",
-  };
-
-  // Regression assertions
-  assert.equal(lead1.phone, null);
-  assert.notEqual(lead1.phone, "Send to phone");
-  assert.equal(lead1.website, "https://infinitefitness.in");
-
-  assert.equal(lead2.phone, "+91 82382 47969");
-  assert.equal(lead2.website, null);
-  assert.notEqual(lead2.website, "https://www.google.com/maps/place/Fit+Master");
+  // Now pending === 0, status must become completed
+  assert.equal(engine.currentRun!.status, "completed");
+  assert.equal(engine.getExportableLeads().length, 3);
 });

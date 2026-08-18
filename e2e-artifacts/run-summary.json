@@ -1,0 +1,23 @@
+{
+  "requested": 5,
+  "discovered": 14,
+  "qualified": 14,
+  "ready": 0,
+  "failed": 0,
+  "pending": 5,
+  "stoppedAtCandidate": 0,
+  "lastEvent": "NONE",
+  "expectedPanel": "",
+  "actualPanel": "",
+  "failureBoundary": "F",
+  "failureBoundaryDescription": "F (Background Result Handling & Queue Advancement): Mismatch between mapsState.searchQuery and detailLead.sourceQuery causes SI_DETAIL_READY to drop valid candidate results as STALE, preventing processNextCandidateInRun() from advancing to candidate #2.",
+  "error": null,
+  "specificErrorsDetected": [],
+  "functionExecutions": {
+    "enrichCandidate": false,
+    "extractDetailPanel": false,
+    "handleEnrichCandidate": false,
+    "processNextCandidateInRun": false
+  },
+  "candidateTraces": []
+}

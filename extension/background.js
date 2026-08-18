@@ -1,94 +1,148 @@
 /**
- * Background Service Worker for Sales Intel Chrome Extension (v1.0.3).
- * Stable coordinator for messaging, auth handshake, and single-owner discovery state.
+ * Background Service Worker for Sales Intel Chrome Extension (v1.0.15)
+ * Manifest V3 Safe Messaging Architecture with Resilient Content-Script Reconnection.
+ * Single Authority for Discovery Session & Run State Isolation.
  */
-importScripts("shared/constants.js", "shared/environment.js", "shared/schema.js");
 
 const getExtensionVersion = () => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return "1.0.6";
+    return "1.0.15";
   }
 };
 
-const STORAGE_KEYS = {
-  TOKEN: "sales_intel_token",
-  USER: "sales_intel_user",
-  API_BASE: "sales_intel_api_base",
-};
+function generateRunId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+}
 
 /**
- * Background-Owned Discovery Orchestrator State.
+ * Single Authoritative Run State for Discovery, Enrichment, and Export.
  */
+let currentRun = {
+  runId: generateRunId(),
+  query: null,
+  sourceQuery: null,
+  requestedLimit: 10,
+  candidates: [],
+  enrichedLeads: [],
+  readyLeads: [],
+  failedLeads: [],
+  status: "idle", // 'idle' | 'running' | 'completed' | 'cancelled' | 'failed'
+  startedAt: Date.now(),
+};
+
 const discoveryState = {
   active: false,
+  status: "idle",
   tabId: null,
-  limit: 2,
-  currentIndex: 0,
-  queue: [],
-  records: [],
-  stats: {
-    discovered: 0,
-    enrichmentStarted: 0,
-    clickAttempted: 0,
-    detailPanelReady: 0,
-    identityVerified: 0,
-    enrichmentCompleted: 0,
-  },
-  activeCandidate: null,
-  status: "idle", // "idle" | "running" | "completed" | "cancelled"
-  currentBusiness: null,
 };
 
-/**
- * Background-Owned Maps Page State Cache.
- * Survives content script re-injections & tab reloads!
- */
 const mapsState = {
   isMaps: false,
   isResults: false,
-  searchQuery: null,
   cardCount: 0,
+  searchQuery: null,
   url: "",
   lastUpdated: 0,
 };
 
-async function getAuthData() {
-  const data = await chrome.storage.local.get([
-    STORAGE_KEYS.TOKEN,
-    STORAGE_KEYS.USER,
-    STORAGE_KEYS.API_BASE,
-  ]);
-  return {
-    token: data[STORAGE_KEYS.TOKEN] || null,
-    user: data[STORAGE_KEYS.USER] || null,
-    apiBase: data[STORAGE_KEYS.API_BASE] || null,
-  };
+let lastCompletedName = null;
+let lastCompletedPlaceId = null;
+const processedPlaceIds = new Set();
+
+function normalizeQuery(q) {
+  if (!q || typeof q !== "string") return "";
+  return q.toLowerCase().replace(/\+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-async function setAuthData(token, user, apiBase) {
-  await chrome.storage.local.set({
-    [STORAGE_KEYS.TOKEN]: token || null,
-    [STORAGE_KEYS.USER]: user || null,
-    [STORAGE_KEYS.API_BASE]: apiBase || null,
+function startNewRun(query, limit) {
+  const newRunId = generateRunId();
+  const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+  const canonicalQuery = normalizeQuery(query) || query || null;
+
+  console.log(`[SI][RUN_CREATED] runId=${newRunId} sourceQuery="${canonicalQuery || ""}" limit=${requestedLimit}`);
+
+  currentRun = {
+    runId: newRunId,
+    query: canonicalQuery,
+    sourceQuery: canonicalQuery,
+    requestedLimit: requestedLimit,
+    candidates: [],
+    enrichedLeads: [],
+    readyLeads: [],
+    failedLeads: [],
+    status: "running",
+    startedAt: Date.now(),
+  };
+
+  processedPlaceIds.clear();
+  lastCompletedName = null;
+  lastCompletedPlaceId = null;
+
+  return currentRun;
+}
+
+function checkAndResetSession(newQuery, newUrl) {
+  const normOldQuery = normalizeQuery(mapsState.searchQuery);
+  const normNewQuery = normalizeQuery(newQuery);
+
+  const queryChanged = Boolean(normNewQuery && normOldQuery && normNewQuery !== normOldQuery);
+
+  if (queryChanged) {
+    console.log(`[SI][SESSION] RESET queryChanged=true previousQuery="${mapsState.searchQuery}" newQuery="${newQuery}"`);
+    mapsState.searchQuery = newQuery;
+    mapsState.url = newUrl || mapsState.url;
+
+    startNewRun(newQuery, currentRun.requestedLimit || 10);
+    currentRun.status = "idle";
+
+    broadcastProgress("Search query changed. Ready for new extraction.");
+  } else {
+    if (newQuery) mapsState.searchQuery = newQuery;
+    mapsState.url = newUrl || mapsState.url;
+  }
+}
+
+// ─── AUTH STORAGE HELPERS ───────────────────────────────────────────────────
+
+async function getAuthData() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["si_token", "si_email", "si_api_base"], (result) => {
+      resolve({
+        token: result.si_token || null,
+        email: result.si_email || null,
+        apiBase: result.si_api_base || "http://localhost:8080",
+      });
+    });
+  });
+}
+
+async function setAuthData(token, email, apiBase) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set(
+      {
+        si_token: token,
+        si_email: email,
+        si_api_base: apiBase || "http://localhost:8080",
+      },
+      resolve
+    );
   });
 }
 
 async function clearAuth() {
-  await chrome.storage.local.remove([
-    STORAGE_KEYS.TOKEN,
-    STORAGE_KEYS.USER,
-    STORAGE_KEYS.API_BASE,
-  ]);
+  return new Promise((resolve) => {
+    chrome.storage.local.remove(["si_token", "si_email", "si_api_base"], resolve);
+  });
 }
 
 function resolveApiBase(apiBase) {
-  if (!apiBase) {
-    if (self.SalesIntelEnv) {
-      const detected = self.SalesIntelEnv.resolveEnvironment(null, null);
-      return detected.origin;
-    }
+  if (!apiBase) return "http://localhost:8080";
+  if (apiBase.includes("localhost:5173") || apiBase.includes("localhost:3000") || apiBase.includes("localhost:4173")) {
     return "http://localhost:8080";
   }
   return apiBase;
@@ -129,67 +183,206 @@ async function sendBatchImportToBackend(leads) {
   }
 }
 
-/** Broadcasts progress updates to popup UI */
-function broadcastProgress(statusText) {
+// ─── SAFE MESSAGING HELPERS (MV3 Resilient) ─────────────────────────────────
+
+function safeSendRuntimeMessage(message, callback) {
   try {
-    chrome.runtime.sendMessage({
-      type: "SI_DISCOVERY_PROGRESS",
-      status: discoveryState.active ? "running" : discoveryState.status,
-      found: discoveryState.records.length,
-      processed: discoveryState.records.length,
-      stats: discoveryState.stats,
-      currentBusiness: discoveryState.currentBusiness,
-      records: discoveryState.records,
-      statusText,
+    chrome.runtime.sendMessage(message, (res) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        if (typeof callback === "function") callback({ ok: false, reason: "NOT_CONNECTED", error: err.message });
+      } else {
+        if (typeof callback === "function") callback(res || { ok: true });
+      }
     });
-  } catch {
-    /* Popup might be closed */
+  } catch (syncErr) {
+    if (typeof callback === "function") callback({ ok: false, reason: "NOT_CONNECTED", error: syncErr?.message });
   }
 }
 
-/** Processes current active candidate or advances to completion */
-function processNextCandidate() {
-  if (!discoveryState.active) return;
+function getExportableLeads() {
+  const ready = currentRun.readyLeads.filter(
+    (lead) => lead.runId === currentRun.runId && normalizeQuery(lead.sourceQuery) === normalizeQuery(currentRun.sourceQuery)
+  );
 
-  if (
-    discoveryState.currentIndex >= discoveryState.queue.length ||
-    discoveryState.records.length >= discoveryState.limit
-  ) {
-    discoveryState.active = false;
-    discoveryState.status = "completed";
-    const summary = {
-      discovered: discoveryState.stats.discovered,
-      processed: discoveryState.currentIndex,
-      succeeded: discoveryState.records.length,
-      failed: Math.max(0, discoveryState.currentIndex - discoveryState.records.length),
-      records: discoveryState.records.length,
-    };
-    console.log("[SI][EXTRACTION][SUMMARY]", JSON.stringify(summary));
-    console.log("[SI][LOOP][SUMMARY]", JSON.stringify(discoveryState.stats));
+  console.log(
+    `[SI][EXPORT] runId=${currentRun.runId} query="${currentRun.query || ""}" requestedLimit=${currentRun.requestedLimit} candidates=${currentRun.candidates.length} ready=${ready.length} exporting=${ready.length}`
+  );
+
+  if (ready.length > currentRun.requestedLimit) {
+    throw new Error(`EXPORT_LIMIT_VIOLATION ready=${ready.length} limit=${currentRun.requestedLimit}`);
+  }
+
+  return ready;
+}
+
+function getRunStats() {
+  return {
+    discovered: currentRun.candidates.length,
+    enrichmentStarted: currentRun.readyLeads.length + currentRun.failedLeads.length,
+    clickAttempted: currentRun.readyLeads.length + currentRun.failedLeads.length,
+    detailPanelReady: currentRun.readyLeads.length,
+    identityVerified: currentRun.readyLeads.length,
+    enrichmentCompleted: currentRun.readyLeads.length,
+    enrichmentFailed: currentRun.failedLeads.length,
+  };
+}
+
+function broadcastProgress(statusText) {
+  const readyLeads = getExportableLeads();
+  safeSendRuntimeMessage({
+    type: "SI_DISCOVERY_PROGRESS",
+    status: currentRun.status,
+    found: currentRun.candidates.length,
+    processed: readyLeads.length,
+    stats: getRunStats(),
+    currentBusiness: currentRun.readyLeads[currentRun.readyLeads.length - 1] || null,
+    records: readyLeads,
+    runId: currentRun.runId,
+    statusText,
+  });
+}
+
+async function ensureContentScriptInjected(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !tab.url || !tab.url.includes("google.com/maps")) {
+      return false;
+    }
+    console.log(`[SI][MSG] REINJECT tab=${tabId}`);
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [
+        "shared/constants.js",
+        "shared/environment.js",
+        "shared/schema.js",
+        "content/maps/dom-utils.js",
+        "content/maps/selectors.js",
+        "content/maps/validators.js",
+        "content/maps/address-parser.js",
+        "content/maps/result-card-extractor.js",
+        "content/maps/detail-extractor.js",
+        "content/maps/maps-adapter.js",
+        "discovery.js",
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    return true;
+  } catch (err) {
+    console.warn(`[SI][MSG] REINJECT_FAILED tab=${tabId}`, err?.message || err);
+    return false;
+  }
+}
+
+async function safeSendTabMessage(tabId, message) {
+  if (!tabId) return { ok: false, reason: "NO_TAB_ID" };
+
+  const sendOnce = (id, msg) => {
+    return new Promise((resolve) => {
+      try {
+        chrome.tabs.sendMessage(id, msg, (res) => {
+          const lastErr = chrome.runtime.lastError;
+          if (lastErr) {
+            const errMsg = lastErr.message || String(lastErr);
+            if (errMsg.includes("Receiving end does not exist") || errMsg.includes("Could not establish connection")) {
+              resolve({ ok: false, reason: "CONTENT_SCRIPT_NOT_CONNECTED", error: errMsg });
+            } else {
+              resolve({ ok: false, reason: "TABS_MESSAGE_ERROR", error: errMsg });
+            }
+          } else {
+            resolve(res || { ok: true });
+          }
+        });
+      } catch (syncErr) {
+        resolve({ ok: false, reason: "SYNC_EXCEPTION", error: syncErr?.message || String(syncErr) });
+      }
+    });
+  };
+
+  let result = await sendOnce(tabId, message);
+  if (result.ok) return result;
+
+  if (result.reason === "CONTENT_SCRIPT_NOT_CONNECTED") {
+    const injected = await ensureContentScriptInjected(tabId);
+    if (injected) {
+      result = await sendOnce(tabId, message);
+      if (result.ok) {
+        return result;
+      }
+    }
+  }
+
+  return result;
+}
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (tabId === discoveryState.tabId && changeInfo.status === "loading") {
+    console.log(`[SI][MSG] DISCONNECTED tab=${tabId}`);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === discoveryState.tabId) {
+    console.log(`[SI][MSG] DISCONNECTED tab=${tabId}`);
+    currentRun.status = "cancelled";
+    discoveryState.tabId = null;
+  }
+});
+
+async function processNextCandidateInRun(index) {
+  if (currentRun.status !== "running") return;
+
+  const totalCandidates = currentRun.candidates.length;
+
+  if (index >= totalCandidates || currentRun.readyLeads.length + currentRun.failedLeads.length >= totalCandidates) {
+    currentRun.status = "completed";
+    const readyLeads = getExportableLeads();
+
+    console.log(
+      `[SI][RUN] ENRICHMENT_COMPLETE runId=${currentRun.runId} selected=${totalCandidates} ready=${readyLeads.length} failed=${currentRun.failedLeads.length}`
+    );
+
     broadcastProgress("Discovery & enrichment complete.");
     return;
   }
 
-  const idx = discoveryState.currentIndex + 1;
-  const candidate = discoveryState.queue[discoveryState.currentIndex];
-  discoveryState.activeCandidate = candidate;
-  discoveryState.currentBusiness = { name: candidate.company_name };
+  const candidate = currentRun.candidates[index];
+  const idx = index + 1;
 
-  discoveryState.stats.enrichmentStarted++;
-  console.log(`[SI][EXTRACTION][CANDIDATE]\nindex=${idx}\nname=${candidate.company_name}`);
-  console.log(`[SI][EXTRACTION][ENRICH_START]\nindex=${idx}\nname=${candidate.company_name}`);
-  console.log(`[SI][LOOP][${idx}][START]\nname=${candidate.company_name}`);
-
-  broadcastProgress(`[LOOP ${idx}/${discoveryState.limit}] ${candidate.company_name}`);
+  console.log(`[SI][ENRICH] ${idx}/${totalCandidates} START name="${candidate.company_name}"`);
+  broadcastProgress(`[LOOP ${idx}/${totalCandidates}] ${candidate.company_name}`);
 
   if (discoveryState.tabId) {
-    chrome.tabs.sendMessage(discoveryState.tabId, {
+    const res = await safeSendTabMessage(discoveryState.tabId, {
       type: "ENRICH_CURRENT_CANDIDATE",
       candidate,
       index: idx,
+      previousName: lastCompletedName,
+      runId: currentRun.runId,
+      sourceQuery: currentRun.sourceQuery,
     });
+    if (!res.ok) {
+      console.warn(`[SI][ENRICH] ${idx} dispatch failed reason=${res.reason}`);
+      // Mark candidate failed and continue
+      handleCandidateFailure(candidate, index, "dispatch_failed");
+    }
   }
 }
+
+function handleCandidateFailure(candidate, index, reason) {
+  const failedLead = {
+    ...candidate,
+    runId: currentRun.runId,
+    sourceQuery: currentRun.sourceQuery,
+    enrichmentStatus: "failed",
+    reason: reason || "failed",
+  };
+  currentRun.failedLeads.push(failedLead);
+  console.log(`[SI][ENRICH] ${index + 1}/${currentRun.candidates.length} FAILED name="${candidate.company_name}" reason=${reason}`);
+  processNextCandidateInRun(index + 1);
+}
+
+// ─── RUNTIME MESSAGE DISPATCHER ─────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return;
@@ -216,28 +409,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // --- SI_CONNECTION_STATE ---
-  if (message.type === "SI_CONNECTION_STATE") {
-    getAuthData().then(({ token, user, apiBase }) => {
-      sendResponse({
-        installed: true,
-        connected: Boolean(token),
-        email: user || null,
-        apiBase: apiBase || null,
-        version: getExtensionVersion(),
-      });
-    });
-    return true;
-  }
-
   // --- SI_GET_STATUS ---
   if (message.type === "SI_GET_STATUS") {
-    getAuthData().then(({ token, user, apiBase }) => {
+    getAuthData().then(({ token, email, apiBase }) => {
       sendResponse({
         ok: true,
         connected: Boolean(token),
-        user: user || (token ? "Connected User" : null),
-        apiBase: apiBase || null,
+        email,
+        apiBase,
+        version: getExtensionVersion(),
       });
     });
     return true;
@@ -245,73 +425,75 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // --- SI_BATCH_IMPORT ---
   if (message.type === "SI_BATCH_IMPORT") {
-    sendBatchImportToBackend(message.leads).then(sendResponse);
+    const leads = getExportableLeads();
+    sendBatchImportToBackend(leads).then((result) => {
+      sendResponse(result);
+    });
     return true;
   }
 
-  // --- GET_MAPS_STATE (Requested by Popup) ---
-  if (message.type === "GET_MAPS_STATE" || message.type === "SI_PAGE_STATE") {
-    console.log("[SI][MSG][REQUEST] type=GET_MAPS_STATE");
-
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  // --- GET_DISCOVERY_STATE / GET_MAPS_STATE ---
+  if (message.type === "GET_DISCOVERY_STATE" || message.type === "GET_MAPS_STATE") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const readyLeads = getExportableLeads();
       if (chrome.runtime.lastError || !tabs || !tabs.length || !tabs[0].id) {
-        console.log(`[SI][MSG][RESPONSE] type=GET_MAPS_STATE ok=true cards=${mapsState.cardCount}`);
         sendResponse({
           ok: true,
-          mapsDetected: mapsState.isMaps,
+          mapsDetected: false,
           cardCount: mapsState.cardCount,
           searchQuery: mapsState.searchQuery,
-          running: discoveryState.active,
-          stats: discoveryState.stats,
-          currentBusiness: discoveryState.currentBusiness,
-          readyCount: discoveryState.records.length,
-          records: discoveryState.records,
+          running: currentRun.status === "running",
+          stats: getRunStats(),
+          readyCount: readyLeads.length,
+          records: readyLeads,
+          runId: currentRun.runId,
         });
         return;
       }
 
       const activeTabId = tabs[0].id;
+      const csRes = await safeSendTabMessage(activeTabId, { type: "SI_PAGE_STATE" });
 
-      chrome.tabs.sendMessage(activeTabId, { type: "SI_PAGE_STATE" }, (csRes) => {
-        if (chrome.runtime.lastError || !csRes || !csRes.ok) {
-          console.log("[SI][MSG][RECOVERED] type=GET_PAGE_STATE reason=content_script_reconnected");
-        } else {
-          mapsState.isMaps = csRes.isMaps;
-          mapsState.isResults = csRes.isResults;
-          mapsState.searchQuery = csRes.query;
-          mapsState.cardCount = csRes.detected || 0;
-          mapsState.url = csRes.url || "";
-          mapsState.lastUpdated = Date.now();
+      if (csRes && csRes.ok) {
+        if (csRes.query) {
+          checkAndResetSession(csRes.query, csRes.url);
         }
+        mapsState.isMaps = csRes.isMaps;
+        mapsState.isResults = csRes.isResults;
+        mapsState.searchQuery = csRes.query;
+        mapsState.cardCount = csRes.detected || 0;
+        mapsState.url = csRes.url || "";
+        mapsState.lastUpdated = Date.now();
+      }
 
-        console.log(`[SI][MSG][RESPONSE] type=GET_MAPS_STATE ok=true cards=${mapsState.cardCount}`);
-        sendResponse({
-          ok: true,
-          mapsDetected: mapsState.isMaps,
-          cardCount: mapsState.cardCount,
-          searchQuery: mapsState.searchQuery,
-          running: discoveryState.active,
-          stats: discoveryState.stats,
-          currentBusiness: discoveryState.currentBusiness,
-          readyCount: discoveryState.records.length,
-          records: discoveryState.records,
-        });
+      sendResponse({
+        ok: true,
+        mapsDetected: mapsState.isMaps,
+        cardCount: mapsState.cardCount,
+        searchQuery: mapsState.searchQuery,
+        running: currentRun.status === "running",
+        stats: getRunStats(),
+        readyCount: readyLeads.length,
+        records: readyLeads,
+        runId: currentRun.runId,
       });
     });
     return true;
   }
 
-  // --- SI_CONTENT_READY (Event sent by Content Script) ---
-  if (message.type === "SI_CONTENT_READY") {
-    console.log("[SI][LIFECYCLE][CONTENT_READY]");
+  // --- SI_CONTENT_READY / CONTENT_SCRIPT_READY ---
+  if (message.type === "SI_CONTENT_READY" || message.type === "CONTENT_SCRIPT_READY") {
+    const tabId = sender?.tab?.id || message.tabId;
+    if (tabId) {
+      discoveryState.tabId = tabId;
+    }
 
-    if (sender && sender.tab && sender.tab.id) {
-      discoveryState.tabId = sender.tab.id;
+    if (message.searchQuery) {
+      checkAndResetSession(message.searchQuery, message.url);
     }
 
     if (message.cardCount != null) {
       mapsState.isMaps = Boolean(message.isMaps);
-      // Reconnect MUST NOT reset a non-zero card count to 0 automatically
       if (message.cardCount > 0 || !mapsState.cardCount) {
         mapsState.cardCount = message.cardCount;
       }
@@ -320,27 +502,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       mapsState.lastUpdated = Date.now();
     }
 
-    if (discoveryState.active && discoveryState.activeCandidate) {
-      const idx = discoveryState.currentIndex + 1;
-      console.log(
-        `[SI][LIFECYCLE][CONTENT_RECONNECTED] candidate=${idx} name=${discoveryState.activeCandidate.company_name}`,
-      );
-
-      if (sender && sender.tab && sender.tab.id) {
-        chrome.tabs.sendMessage(sender.tab.id, {
-          type: "ENRICH_CURRENT_CANDIDATE",
-          candidate: discoveryState.activeCandidate,
-          index: idx,
-        });
-      }
-    }
-
     sendResponse({ ok: true });
     return false;
   }
 
-  // --- SI_PAGE_STATE_UPDATE (Explicit DOM Mutation Update) ---
+  // --- SI_PAGE_STATE_UPDATE ---
   if (message.type === "SI_PAGE_STATE_UPDATE") {
+    if (message.searchQuery) {
+      checkAndResetSession(message.searchQuery, message.url);
+    }
+
     if (message.cardCount != null) {
       mapsState.isMaps = Boolean(message.isMaps);
       mapsState.isResults = Boolean(message.isResults);
@@ -355,60 +526,110 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // --- SI_START_DISCOVERY ---
   if (message.type === "SI_START_DISCOVERY") {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (chrome.runtime.lastError || !tabs || !tabs.length || !tabs[0].id) {
+    const getTargetTab = () =>
+      new Promise((resolve) => {
+        if (message.tabId) {
+          chrome.tabs.get(message.tabId, (t) => resolve(t || null));
+          return;
+        }
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs.length && tabs[0].id) {
+            resolve(tabs[0]);
+          } else {
+            chrome.tabs.query({ url: "*://*.google.com/maps*" }, (allMapsTabs) => {
+              resolve(allMapsTabs && allMapsTabs.length ? allMapsTabs[0] : null);
+            });
+          }
+        });
+      });
+
+    getTargetTab().then(async (targetTab) => {
+      if (!targetTab || !targetTab.id) {
         sendResponse({ ok: false, error: "No active Google Maps tab found." });
         return;
       }
 
-      const activeTabId = tabs[0].id;
+      const activeTabId = targetTab.id;
+      const requestedLimit = Math.min(Math.max(Number(message.limit) || 10, 1), 50);
+
+      // Resolve live page query synchronously from content script before creating run
+      let pageQuery = null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const pageStateRes = await safeSendTabMessage(activeTabId, { type: "SI_PAGE_STATE" });
+        if (pageStateRes && pageStateRes.ok && pageStateRes.query) {
+          pageQuery = pageStateRes.query;
+          break;
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 350));
+      }
+
+      const resolvedQuery = pageQuery || mapsState.searchQuery || message.query || null;
+      const canonicalQuery = normalizeQuery(resolvedQuery) || resolvedQuery;
+
+      console.log(
+        `[SI][QUERY_STATE] pageQuery="${pageQuery || ""}" mapsState.searchQuery="${mapsState.searchQuery || ""}" canonicalQuery="${canonicalQuery || ""}"`
+      );
+      console.log(
+        `[SI][START_DISCOVERY] requestedQuery="${message.query || ""}" resolvedQuery="${resolvedQuery || ""}" canonicalQuery="${canonicalQuery || ""}" runId=${currentRun.runId}`
+      );
+
+      if (!canonicalQuery) {
+        currentRun.status = "failed";
+        sendResponse({ ok: false, error: "No search query detected on Google Maps. Please perform a search first." });
+        broadcastProgress("No search query detected.");
+        return;
+      }
+
+      mapsState.searchQuery = canonicalQuery;
+
+      // Start completely fresh run with canonical query
+      startNewRun(canonicalQuery, requestedLimit);
       discoveryState.tabId = activeTabId;
-      discoveryState.active = true;
-      discoveryState.status = "running";
-      discoveryState.limit = Math.min(Math.max(Number(message.limit) || 2, 1), 50);
-      discoveryState.currentIndex = 0;
-      discoveryState.queue = [];
-      discoveryState.records = [];
-      discoveryState.stats = {
-        discovered: 0,
-        enrichmentStarted: 0,
-        clickAttempted: 0,
-        detailPanelReady: 0,
-        identityVerified: 0,
-        enrichmentCompleted: 0,
-      };
 
-      chrome.tabs.sendMessage(activeTabId, { type: "BUILD_DISCOVERY_QUEUE", limit: discoveryState.limit }, (res) => {
-        if (chrome.runtime.lastError || !res || !res.ok) {
-          discoveryState.active = false;
-          sendResponse({ ok: false, error: "Failed to query Google Maps candidates." });
-          return;
-        }
-
-        discoveryState.queue = res.queue || [];
-        discoveryState.stats.discovered = discoveryState.queue.length;
-
-        console.log(`[SI][EXTRACTION][CARDS]\ncount=${discoveryState.queue.length}`);
-        console.log(`[SI][EXTRACTION][QUALIFIED]\ncount=${discoveryState.queue.length}`);
-
-        if (discoveryState.queue.length === 0) {
-          discoveryState.active = false;
-          discoveryState.status = "completed";
-          sendResponse({ ok: true, records: [], stats: discoveryState.stats });
-          return;
-        }
-
-        sendResponse({ ok: true, stats: discoveryState.stats });
-        processNextCandidate();
+      const res = await safeSendTabMessage(activeTabId, {
+        type: "BUILD_DISCOVERY_QUEUE",
+        limit: currentRun.requestedLimit,
+        runId: currentRun.runId,
+        sourceQuery: currentRun.sourceQuery,
       });
+
+      console.log(`[SI][START_DISCOVERY] BUILD_DISCOVERY_QUEUE res=${JSON.stringify(res)}`);
+
+      if (!res || !res.ok) {
+        currentRun.status = "failed";
+        sendResponse({ ok: false, error: "Failed to query Google Maps candidates." });
+        return;
+      }
+
+      const rawDiscovered = res.queue || [];
+      console.log(`[SI][RUN] DISCOVERED count=${rawDiscovered.length}`);
+
+      // Apply requested limit ONCE
+      const selected = rawDiscovered.slice(0, currentRun.requestedLimit);
+      console.log(`[SI][RUN] LIMITED count=${selected.length}`);
+
+      currentRun.candidates = selected.map((c) => ({
+        ...c,
+        runId: currentRun.runId,
+        sourceQuery: currentRun.sourceQuery,
+      }));
+
+      if (currentRun.candidates.length === 0) {
+        currentRun.status = "completed";
+        sendResponse({ ok: true, records: [], stats: getRunStats() });
+        broadcastProgress("No candidates discovered.");
+        return;
+      }
+
+      sendResponse({ ok: true, stats: getRunStats() });
+      processNextCandidateInRun(0);
     });
     return true;
   }
 
   // --- SI_STOP_DISCOVERY ---
   if (message.type === "SI_STOP_DISCOVERY") {
-    discoveryState.active = false;
-    discoveryState.status = "cancelled";
+    currentRun.status = "cancelled";
     broadcastProgress("Discovery stopped by user.");
     sendResponse({ ok: true });
     return false;
@@ -416,61 +637,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // --- SI_CLICK_ATTEMPTED ---
   if (message.type === "SI_CLICK_ATTEMPTED") {
-    const idx = message.index || discoveryState.currentIndex + 1;
-    const candidateName = message.name || (discoveryState.activeCandidate ? discoveryState.activeCandidate.company_name : "");
-    discoveryState.stats.clickAttempted++;
-    console.log(`[SI][LOOP][${idx}][CLICK]\nname=${candidateName}`);
     sendResponse({ ok: true });
     return false;
   }
 
   // --- SI_DETAIL_READY ---
   if (message.type === "SI_DETAIL_READY") {
-    const idx = message.index || discoveryState.currentIndex + 1;
-    const detailLead = message.detailLead;
-    const candidateName = detailLead ? detailLead.company_name : "";
+    const runId = message.runId || message.sessionId;
+    const sourceQuery = message.sourceQuery;
 
-    console.log(`[SI][EXTRACTION][ENRICH_RESULT]\nindex=${idx}\nname=${candidateName}\nsuccess=true`);
-    console.log(`[SI][LOOP][${idx}][DETAIL_READY]\nname=${candidateName}`);
-    console.log(`[SI][LOOP][${idx}][IDENTITY_OK]\nname=${candidateName}`);
+    const normRunQuery = normalizeQuery(currentRun.sourceQuery);
+    const normMsgQuery = normalizeQuery(sourceQuery);
 
-    const detailSummary = {
-      company_name: detailLead.company_name,
-      address: detailLead.address || null,
-      phone: detailLead.phone || null,
-      website: detailLead.website || null,
-      opening_status: detailLead.opening_status || null,
-    };
-    console.log(`[SI][LOOP][${idx}][DETAIL_DATA]`, JSON.stringify(detailSummary));
-    console.log(`[SI][LOOP][${idx}][COMPLETE]\nname=${candidateName}`);
-    console.log(`[SI][EXTRACTION][CANDIDATE_COMPLETE]\nindex=${idx}\nname=${candidateName}`);
+    console.log(
+      `[SI][DETAIL_READY] runId=${runId} sourceQuery="${sourceQuery || ""}" currentRunId=${currentRun.runId} currentRunSourceQuery="${currentRun.sourceQuery || ""}"`
+    );
 
-    discoveryState.stats.detailPanelReady++;
-    discoveryState.stats.identityVerified++;
-    discoveryState.stats.enrichmentCompleted++;
-
-    if (detailLead) {
-      detailLead.source = "detail";
-      discoveryState.records.push(detailLead);
+    // Hard Stale Guard: Ignore any response that does not match the active currentRun
+    if (runId !== currentRun.runId || (normMsgQuery && normRunQuery && normMsgQuery !== normRunQuery)) {
+      console.log(
+        `[SI][STALE_RESPONSE] reason=query_or_run_mismatch responseRunId=${runId} currentRunId=${currentRun.runId} responseSourceQuery="${sourceQuery}" currentRunSourceQuery="${currentRun.sourceQuery}"`
+      );
+      sendResponse({ ok: true, ignored: true });
+      return false;
     }
 
-    discoveryState.currentIndex++;
+    const index = (message.index || 1) - 1;
+    const candidate = currentRun.candidates[index] || {};
+    const detailLead = message.detailLead || {};
+
+    const mergedLead = {
+      ...candidate,
+      ...detailLead,
+      runId: currentRun.runId,
+      sourceQuery: currentRun.sourceQuery,
+      enrichmentStatus: "complete",
+      enrichedAt: new Date().toISOString(),
+    };
+
+    const placeId = mergedLead.place_id;
+    if (placeId && processedPlaceIds.has(placeId)) {
+      console.log(`[SI][ENRICH] ${index + 1} DUPLICATE_SKIPPED placeId=${placeId}`);
+      currentRun.failedLeads.push({
+        ...candidate,
+        runId: currentRun.runId,
+        sourceQuery: currentRun.sourceQuery,
+        enrichmentStatus: "duplicate_skipped",
+      });
+    } else {
+      if (placeId) processedPlaceIds.add(placeId);
+      lastCompletedName = mergedLead.company_name;
+      lastCompletedPlaceId = mergedLead.place_id;
+      currentRun.readyLeads.push(mergedLead);
+
+      console.log(
+        `[SI][ENRICH] ${index + 1}/${currentRun.candidates.length} COMPLETE name="${mergedLead.company_name}" phone=${Boolean(mergedLead.phone)} website=${Boolean(mergedLead.website)} address=${Boolean(mergedLead.address)}`
+      );
+
+      broadcastProgress(`[LOOP ${currentRun.readyLeads.length}/${currentRun.candidates.length}] ${mergedLead.company_name} ✓`);
+    }
+
     sendResponse({ ok: true });
-    processNextCandidate();
+
+    console.log(`[SI][QUEUE_ADVANCE] completedCandidate="${mergedLead.company_name}" nextCandidateIndex=${index + 1}`);
+    processNextCandidateInRun(index + 1);
     return false;
   }
 
   // --- SI_CANDIDATE_FAILED ---
   if (message.type === "SI_CANDIDATE_FAILED") {
-    const idx = message.index || discoveryState.currentIndex + 1;
-    const name = message.name || (discoveryState.activeCandidate ? discoveryState.activeCandidate.company_name : "");
-    console.log(`[SI][EXTRACTION][ENRICH_RESULT]\nindex=${idx}\nname=${name}\nsuccess=false`);
-    console.log(`[SI][EXTRACTION][FAILED]\nstage=detail_panel_enrichment\nindex=${idx}\nname=${name}`);
-    console.log(`[SI][LOOP][${idx}][FAILED] name=${name} reason=${message.reason || "detail_panel_timeout"}`);
+    const runId = message.runId || message.sessionId;
+    if (runId !== currentRun.runId) {
+      sendResponse({ ok: true, ignored: true });
+      return false;
+    }
 
-    discoveryState.currentIndex++;
+    const index = (message.index || 1) - 1;
+    const candidate = currentRun.candidates[index] || {};
+    handleCandidateFailure(candidate, index, message.reason || "enrichment_failed");
     sendResponse({ ok: true });
-    processNextCandidate();
     return false;
   }
 

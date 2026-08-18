@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sales Intel Maps Connector",
-  "version": "1.0.6",
+  "version": "1.0.15",
   "description": "Discover public business information from Google Maps in your own browser and import it into Sales Intelligence.",
   "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": [
@@ -61,5 +61,11 @@
       "http://localhost/*",
       "http://127.0.0.1/*"
     ]
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.js", "popup.css", "icon.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
