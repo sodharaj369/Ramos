@@ -1,6 +1,13 @@
-# Self-hosted Google Maps lead source
+# Future / Optional Self-Hosted Google Maps Architecture
 
-The `self-hosted-google-maps` provider talks to your own deployment of
+> [!IMPORTANT]
+> **Future / Optional Architecture**
+> This document describes the **server-side containerized scraper architecture** using [`gosom/google-maps-scraper`](https://github.com/gosom/google-maps-scraper).
+>
+> **It is NOT required for the currently working Google Maps extraction workflow.**
+> The active production path is the **Sales Intel Maps Connector Chrome Extension (v1.0.16)**, which extracts public Google Maps listings directly in the user's Chrome browser without any hosted scraper container.
+
+The `self-hosted-google-maps` provider talks to a server-side deployment of
 [`gosom/google-maps-scraper`](https://github.com/gosom/google-maps-scraper)
 (MIT licence). The scraper runs **outside** this application — the app only
 calls its HTTP API from the server side.

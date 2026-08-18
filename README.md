@@ -1,78 +1,99 @@
-# Sales Intelligence — Internal Tool
+# Sales Intelligence — Lead Management & Maps Extraction
 
-An internal web application for the sales team: lead management, deduplication,
-CSV import/export, email verification and background job processing, built on a
-pluggable data-provider architecture.
+An internal sales intelligence web application for lead discovery, deduplication, CSV import/export, email verification, and sales signal tracking.
 
-Stack: TanStack Start (React 19, Vite 7, Tailwind v4) + Lovable Cloud backend
-(Postgres, auth, RLS, storage).
+Built with **TanStack Start** (React 19, Vite 8, Tailwind v4) + **Supabase / Lovable Cloud backend** (Postgres, Auth, RLS, Storage).
 
-## Current capabilities
+---
 
-- **Authentication** — email/password sign-up, sign-in, password reset, email
-  verification state with resend + cooldown, protected routes.
-- **Multi-user access** — team-wide read access to leads/jobs/verifications;
-  write access limited to record creators and admins (role table + RLS).
-- **Lead management** — filterable, paginated leads table, lead detail with
-  sales signals, provenance and change history.
-- **CSV import/export** — RFC4180 parser, column mapping, preview, export of
-  filtered/selected leads.
-- **Deduplication** — multi-key matching (domain → email → phone → name+city)
-  with field-level enrichment on merge, backed by DB unique constraints.
-- **Email verification** — built-in verifier (syntax, DNS, MX, disposable
-  domains, role accounts) with 30-day result caching.
-- **Verification history** — team-wide audit log of every verification result.
-- **Job processing** — queued/running/completed/failed/cancelled jobs, batched
-  and resumable, with retry/backoff and per-provider usage tracking. Batches are
-  driven by the open browser tab; there is no server-side scheduler yet.
-- **Provider architecture** — lead sources and email verifiers are pluggable
-  behind a common interface; credentials live in server-side secrets only.
+## Current Product Status
 
-## Current status
+| Component | Architecture | Status |
+| :--- | :--- | :--- |
+| **Sales Intel Web App** | TanStack Start + Supabase | **Active** — Lead table, deduplication, verification history, job management. |
+| **Google Maps Discovery** | Browser Chrome Extension (**v1.0.16**) | **Active** — Extracts public Google Maps details directly in the user's Chrome browser. No hosted scraper required. |
+| **Built-in Email Verifier** | Server-side validation | **Active** — Syntax, DNS, MX, disposable domain, and role-account checks. |
+| **External Email Verifier** | Standalone Go service (`email-verifier-service`) | **Available** — Optional microservice for deep SMTP reachability checks. |
+| **Self-Hosted Server Scraper** | Headless Chromium Docker service | **Future / Optional** — Server-side scraper container architecture for headless discovery. |
 
-| Component | Status |
-| --- | --- |
-| Lead discovery — self-hosted Google Maps scraper | **Not yet deployed.** No scraper host exists, so lead discovery is unavailable. The Lead Finder shows "Not configured" and search is disabled. |
-| External email verifier | **Not configured.** Requires `EMAIL_VERIFIER_ENDPOINT` + `EMAIL_VERIFIER_API_KEY`. |
-| Built-in email verifier | **Available.** No SMTP mailbox handshake, so mailbox existence is never confirmed — results are `valid`/`risky`/`unknown` accordingly. |
-| Demo lead source | Synthetic sample data for testing only. Must be selected explicitly; it never runs automatically and results are prefixed `[DEMO]`. |
+---
 
-Real Google Maps lead discovery is **not** currently available in this
-deployment.
+## Key Capabilities
 
-## Future infrastructure
+- **Browser-Based Google Maps Discovery** — Extract business leads in real-time using the **Sales Intel Maps Connector** Chrome Extension (**v1.0.16**).
+- **Lead Deduplication & Merging** — Multi-key matching (domain → email → phone → company name + city) with field-level enrichment on merge.
+- **CSV Export & Import** — RFC4180 parser with column mapping, preview, and current-run CSV export.
+- **Email Verification** — Built-in syntax, DNS, and MX checks with 30-day result caching, plus optional Go SMTP verification microservice.
+- **Multi-User Access Control** — Team-wide read access with role-based write/admin permissions (RLS).
 
-The Google Maps lead source will run as a **separate Docker service**
-(`gosom/google-maps-scraper`, MIT) on infrastructure outside this app —
-a VPS or container host. The application only calls that service's HTTP API
-server-side.
+---
+
+## Google Maps Chrome Extension Workflow (v1.0.16)
+
+Google Maps lead discovery runs locally inside the user's Chrome browser via the extension in `extension/`:
 
 ```
-Application  ->  Lovable / Supabase (app, database, auth)
-Scraper      ->  Separate Docker host (headless Chromium, HTTP API)
+Google Maps Search in Chrome
+  ↳ Detect result cards
+  ↳ Respect user-selected result limit (e.g., max 5 candidates)
+  ↳ Build candidate queue & process sequentially
+  ↳ Open Google Maps detail panel per candidate
+  ↳ Detect detail panel & validate business identity
+  ↳ Extract business details (company, address, phone, website, rating, reviews, status, category, URL)
+  ↳ Store result against candidate index
+  ↳ Move to next candidate upon reaching terminal state
+  ↳ Export completed current-run records to CSV
 ```
 
-Headless Chromium/Playwright cannot and must not run inside Supabase Edge
-Functions or the app's serverless runtime. Once the container is deployed, set
-`GMAPS_SCRAPER_URL` (and optionally an API key) as a server-side secret and the
-provider switches on with no code changes.
+### CSV Export Contract
+- **Completed Records**: Export CSV contains only completed, validated current-run candidates.
+- **Re-Download without Extraction**: Clicking **Download CSV** again exports the existing completed run without re-initiating extraction.
+- **Run Isolation**: Results from past runs are never mixed into a new search run.
+- **Standalone Export**: CSV export operates independently from Sales Intel web application connection status in the popup.
 
-Deployment guide: [`docs/self-hosted-google-maps.md`](docs/self-hosted-google-maps.md).
+---
 
-## Environment variables
+## Architecture: Current vs. Future
 
-See [`.env.example`](.env.example) for the full list of names. Provider
-credentials are server-side only and are never sent to the browser; the UI shows
-only configured / not-configured status.
+### 1. Current Browser Extension Architecture (Active)
+No server-side scraper host or headless browser setup is required. The user installs the **Sales Intel Maps Connector (v1.0.16)** from `extension/` into Chrome, navigates to Google Maps, and extracts public listings directly.
 
-## Development
+### 2. Future / Optional Self-Hosted Scraper Architecture
+For automated or headless bulk server-side discovery without an open browser window, the codebase supports an optional backend scraper (`gosom/google-maps-scraper`). See [`docs/self-hosted-google-maps.md`](docs/self-hosted-google-maps.md) for future deployment details.
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+---
+
+## Local Development Quick Start
+
+Run the local development environment using the root batch scripts:
+
+```cmd
+start-local.bat
 ```
 
-Never commit `.env`, secrets, API keys, service-role keys, tokens or local
-scraper data — all are excluded via `.gitignore`.
+This launches the dev web server (`http://localhost:8080`), starts local support containers (optional Email Verifier on port 8081 and Scraper on port 8082), and verifies service health.
+
+- **Stop Services**: `stop-local.bat`
+- **Restart Services**: `restart-local.bat`
+
+See [`docs/local-development.md`](docs/local-development.md) for full local environment setup details.
+
+---
+
+## Chrome Extension Setup
+
+1. Open `chrome://extensions` in Chrome and enable **Developer mode**.
+2. Click **Load unpacked** and select the [`extension/`](file:///d:/Sales-Intel/extension) folder.
+3. Open `http://localhost:8080/settings` (or your Sales Intel web app instance).
+4. Click **Connect Extension** to establish session sync.
+
+See [`docs/chrome-extension.md`](docs/chrome-extension.md) for full extension documentation.
+
+---
+
+## Detailed Documentation
+
+- **Chrome Extension Manual**: [`docs/chrome-extension.md`](docs/chrome-extension.md) — Detailed sequential workflow, candidate queue, extraction fields, and CSV export.
+- **Local Development Guide**: [`docs/local-development.md`](docs/local-development.md) — Environment setup, scripts, Docker microservices, and debugging.
+- **Future Self-Hosted Scraper**: [`docs/self-hosted-google-maps.md`](docs/self-hosted-google-maps.md) — Optional containerized backend scraper architecture.
+- **Email Verifier Service**: [`email-verifier-service/README.md`](email-verifier-service/README.md) — Standalone Go SMTP email verification microservice.

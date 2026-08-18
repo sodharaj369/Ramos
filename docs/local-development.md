@@ -15,12 +15,12 @@ start-local.bat
 ### What `start-local.bat` does:
 1. **Verifies Prerequisites**: Checks that Docker CLI (`docker.exe`) and Docker Desktop daemon are up and running.
 2. **Checks Port Availability**: Inspects ports `8080`, `8081`, and `8082` to ensure no conflicting processes are running.
-3. **Builds & Starts Docker Containers**:
+3. **Builds & Starts Support Containers**:
    - **Email Verifier (`sales-intel-email-verifier`)**: Builds the Docker image `email-verifier-service` if needed, then starts the container on port `8081:8080`.
-   - **Google Maps Scraper (`sales-intel-gmaps`)**: Starts the `gosom/google-maps-scraper` container in `-web` mode on port `8082:8080`.
+   - **Google Maps Scraper (`sales-intel-gmaps`)**: Starts the optional `gosom/google-maps-scraper` container on port `8082:8080` for server-side testing.
 4. **Starts Web Server**: Launches `npm run dev -- --port 8080` in a dedicated terminal window if not already active.
-5. **Opens Dedicated Log Windows**: Streams log views for both Docker containers.
-6. **Performs Health Checks**: Continuously polls all three local endpoints until healthy.
+5. **Opens Dedicated Log Windows**: Streams log views for both support containers.
+6. **Performs Health Checks**: Continuously polls local endpoints until healthy.
 7. **Displays Service Status Table**: Displays the service health summary.
 8. **Auto-Opens Browser**: Opens [http://localhost:8080](http://localhost:8080) automatically once the web app is ready.
 
@@ -28,7 +28,7 @@ start-local.bat
 
 ## 2. One-Click Shutdown & Restart
 
-- **Shutdown**: Double-click `stop-local.bat`. Terminates the dev server process on port `8080` and stops/removes `sales-intel-email-verifier` and `sales-intel-gmaps` containers. Does not affect unrelated containers or files.
+- **Shutdown**: Double-click `stop-local.bat`. Terminates the dev server process on port `8080` and stops/removes support containers (`sales-intel-email-verifier` and `sales-intel-gmaps`). Does not affect unrelated containers or files.
 - **Restart**: Double-click `restart-local.bat`. Executes `stop-local.bat`, waits 2 seconds, and executes `start-local.bat`.
 
 ---
@@ -39,23 +39,26 @@ start-local.bat
 | :--- | :--- | :--- | :--- |
 | **Sales Intel Web App** | `http://localhost:8080` | `http://localhost:8080` | Main web application (React / TanStack / Vite). |
 | **Email Verifier** | `http://localhost:8081` | `http://localhost:8081/health` | Standalone Go microservice checking email syntax, MX records, and SMTP deliverability. |
-| **Google Maps Scraper** | `http://localhost:8082` | `http://localhost:8082` | Playwright-based Go web scraper (`gosom/google-maps-scraper`) for lead discovery. |
+| **Google Maps Scraper (Optional)** | `http://localhost:8082` | `http://localhost:8082` | Playwright-based Go web scraper (`gosom/google-maps-scraper`) for optional server-side testing. |
+
+> [!NOTE]
+> The primary, currently active Google Maps lead extraction path is the **Sales Intel Maps Connector Chrome Extension (v1.0.16)** running in the user's browser. The server-side scraper container is optional.
 
 ---
 
-## 4. Chrome Extension Connection & Setup
+## 4. Chrome Extension Connection & Setup (v1.0.16)
 
 The extension connects directly to the web application using Chrome's `externally_connectable` webpage-to-extension messaging mechanism (`chrome.runtime.sendMessage`).
 
 ### Extension Installation:
 1. Open `chrome://extensions` in Chrome and enable **Developer mode** (top right toggle).
-2. Click **Load unpacked** and select the `D:\Sales-Intel\extension` directory.
+2. Click **Load unpacked** and select the [`extension/`](file:///d:/Sales-Intel/extension) directory.
 3. Open [http://localhost:8080/settings](http://localhost:8080/settings) in your browser.
 4. Verify status badge displays **● Installed — Not connected**.
 5. Click **Connect Extension**. Status changes immediately to **● Connected**.
 
 ### Extension Reload Workflow:
-If you modify extension files in `D:\Sales-Intel\extension`:
+If you modify extension files in [`extension/`](file:///d:/Sales-Intel/extension):
 1. Go to `chrome://extensions` and click the refresh icon on **Sales Intel Maps Connector**.
 2. Refresh the web app tab at `http://localhost:8080/settings`.
 3. The page will maintain or re-verify connection status cleanly without throwing context invalidation errors.
@@ -100,3 +103,4 @@ start-local.bat
   taskkill /F /PID <PID>
   ```
 - Re-run `start-local.bat`.
+
