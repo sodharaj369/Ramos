@@ -42,6 +42,7 @@ dist-ssr
 # Local scraper data & temp files
 gmapsdata/
 scraper-data/
+scratch/
 *.tmp
 tmp/
 coverage/
