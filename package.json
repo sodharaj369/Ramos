@@ -10,6 +10,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test": "npx tsx --test src/**/*.test.ts",
+    "check:consistency": "node scripts/check-project-consistency.js",
     "package:extension": "node scripts/extension-package.js",
     "lint": "eslint .",
     "format": "prettier --write ."
