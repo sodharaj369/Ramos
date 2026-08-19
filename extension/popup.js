@@ -48,6 +48,19 @@
     extVersion: document.getElementById("extVersion"),
     downloadCsvBtn: document.getElementById("downloadCsvBtn"),
     importBackendBtn: document.getElementById("importBackendBtn"),
+    importBanner: document.getElementById("importBanner"),
+    importBannerHeader: document.getElementById("importBannerHeader"),
+    importBannerSubtitle: document.getElementById("importBannerSubtitle"),
+    importErrorBanner: document.getElementById("importErrorBanner"),
+    importErrorHeader: document.getElementById("importErrorHeader"),
+    importErrorSubtitle: document.getElementById("importErrorSubtitle"),
+    importBreakdownList: document.getElementById("importBreakdownList"),
+    statImportCreated: document.getElementById("statImportCreated"),
+    statImportMerged: document.getElementById("statImportMerged"),
+    statImportDuplicates: document.getElementById("statImportDuplicates"),
+    statImportFailedRow: document.getElementById("statImportFailedRow"),
+    statImportFailed: document.getElementById("statImportFailed"),
+    viewImportedLeadsBtn: document.getElementById("viewImportedLeadsBtn"),
     openAppBtn: document.getElementById("openAppBtn"),
     viewLeadsBtn: document.getElementById("viewLeadsBtn"),
     settingsBtn: document.getElementById("settingsBtn"),
@@ -69,6 +82,92 @@
   let currentDetectedCards = 0;
   let siConnected = false;
   let activeSessionId = null;
+
+  function renderImportErrorState(errorMsg) {
+    if (!el.resultSummary) return;
+    el.resultSummary.classList.remove("hidden");
+    if (el.importBanner) el.importBanner.classList.add("hidden");
+    if (el.importBreakdownList) el.importBreakdownList.classList.add("hidden");
+    if (el.viewImportedLeadsBtn) el.viewImportedLeadsBtn.classList.add("hidden");
+
+    if (el.importErrorBanner) {
+      el.importErrorBanner.classList.remove("hidden");
+      if (el.importErrorHeader) el.importErrorHeader.textContent = "⚠ IMPORT FAILED";
+      if (el.importErrorSubtitle) el.importErrorSubtitle.textContent = errorMsg || "Import failed. Please try again.";
+    }
+  }
+
+  function renderImportResultState(res) {
+    if (!res || !el.importBanner) return;
+
+    if (el.importErrorBanner) el.importErrorBanner.classList.add("hidden");
+
+    const created = res.created || 0;
+    const merged = res.merged || 0;
+    const duplicate = res.duplicate || 0;
+    const rejected = res.rejected || 0;
+    const errors = res.errors || 0;
+    const totalFailed = rejected + errors;
+    const totalAdded = created + merged;
+
+    el.resultSummary.classList.remove("hidden");
+    el.importBanner.classList.remove("hidden");
+    el.importBreakdownList.classList.remove("hidden");
+
+    if (el.statImportCreated) el.statImportCreated.textContent = created;
+    if (el.statImportMerged) el.statImportMerged.textContent = merged;
+    if (el.statImportDuplicates) el.statImportDuplicates.textContent = duplicate;
+    if (totalFailed > 0) {
+      if (el.statImportFailedRow) el.statImportFailedRow.classList.remove("hidden");
+      if (el.statImportFailed) el.statImportFailed.textContent = totalFailed;
+    } else {
+      if (el.statImportFailedRow) el.statImportFailedRow.classList.add("hidden");
+    }
+
+    if (totalFailed > 0) {
+      // Partial Failure
+      el.importBanner.className = "import-banner warning";
+      el.importBannerHeader.textContent = "⚠ IMPORT COMPLETED WITH ISSUES";
+      el.importBannerSubtitle.textContent = `${totalAdded} lead${totalAdded === 1 ? "" : "s"} added, ${totalFailed} lead${totalFailed === 1 ? "" : "s"} failed`;
+      if (el.viewImportedLeadsBtn) {
+        el.viewImportedLeadsBtn.classList.remove("hidden");
+        el.viewImportedLeadsBtn.textContent = totalAdded > 0
+          ? `VIEW ${totalAdded} LEAD${totalAdded === 1 ? "" : "S"} IN SALES INTEL`
+          : "VIEW LEADS IN SALES INTEL";
+      }
+    } else if (created === 0 && merged === 0 && duplicate > 0) {
+      // Duplicate-Only Result
+      el.importBanner.className = "import-banner success";
+      el.importBannerHeader.textContent = "✓ IMPORT CHECKED";
+      el.importBannerSubtitle.textContent = `All ${duplicate} lead${duplicate === 1 ? " was" : "s were"} already in Sales Intel`;
+      if (el.viewImportedLeadsBtn) {
+        el.viewImportedLeadsBtn.classList.remove("hidden");
+        el.viewImportedLeadsBtn.textContent = "VIEW LEADS IN SALES INTEL";
+      }
+    } else if (merged > 0) {
+      // Created + Merged
+      el.importBanner.className = "import-banner success";
+      el.importBannerHeader.textContent = "✓ IMPORT COMPLETED";
+      el.importBannerSubtitle.textContent = `${totalAdded} leads added/enriched to Sales Intel`;
+      if (el.viewImportedLeadsBtn) {
+        el.viewImportedLeadsBtn.classList.remove("hidden");
+        el.viewImportedLeadsBtn.textContent = `VIEW ${totalAdded} LEADS IN SALES INTEL`;
+      }
+    } else {
+      // Created Only
+      el.importBanner.className = "import-banner success";
+      el.importBannerHeader.textContent = "✓ IMPORT COMPLETED";
+      el.importBannerSubtitle.textContent = `${created} lead${created === 1 ? "" : "s"} added to Sales Intel`;
+      if (el.viewImportedLeadsBtn) {
+        el.viewImportedLeadsBtn.classList.remove("hidden");
+        el.viewImportedLeadsBtn.textContent = `VIEW ${created} LEADS IN SALES INTEL`;
+      }
+    }
+
+    if (el.importBackendBtn) {
+      el.importBackendBtn.textContent = "Import another batch";
+    }
+  }
 
   // ─── Environment ─────────────────────────────────────────────────────────────
   function getEnv() {
@@ -193,7 +292,8 @@
   // ─── UI State Rendering ───────────────────────────────────────────────────────
 
   function updateActionButtons() {
-    const hasReadyLeads = currentExtractedLeads.length > 0;
+    const readyCount = currentExtractedLeads.length;
+    const hasReadyLeads = readyCount > 0;
     const hasCandidates = currentDetectedCards > 0;
 
     // 1. Download CSV: enabled if ready leads exist OR if candidates are available to extract & download
@@ -202,13 +302,22 @@
       el.downloadCsvBtn.disabled = !hasReadyLeads;
     }
 
-    // 2. Import: requires Sales Intel connection AND (ready leads OR candidates to extract)
-    el.extractBtn.disabled = !siConnected || (!hasReadyLeads && !hasCandidates);
+    // 2. Run Discovery (Upper action): triggers extraction/discovery on Google Maps candidates
+    el.extractBtn.disabled = !hasReadyLeads && !hasCandidates;
+    el.extractBtn.textContent = hasReadyLeads ? "Run Discovery Again" : "Run Discovery";
+
+    // 3. Import to Sales Intel (Summary Card action): ONLY button that imports ready leads to backend
     if (el.importBackendBtn) {
-      el.importBackendBtn.disabled = !siConnected || !hasReadyLeads;
+      if (hasReadyLeads) {
+        el.importBackendBtn.disabled = !siConnected;
+        el.importBackendBtn.textContent = `IMPORT ${readyCount} LEAD${readyCount === 1 ? "" : "S"} TO SALES INTEL`;
+      } else {
+        el.importBackendBtn.disabled = true;
+        el.importBackendBtn.textContent = "NO LEADS READY TO IMPORT";
+      }
     }
 
-    // 3. Not connected hint
+    // 4. Not connected hint
     if (!siConnected) {
       el.importHint && el.importHint.classList.remove("hidden");
     } else {
@@ -505,34 +614,58 @@
       triggerExportFlow();
     });
 
+    // Local double-submit protection lock
+    let isLocalImportLocked = false;
+
     // Summary Card Import to Sales Intel
     el.importBackendBtn.addEventListener("click", () => {
+      if (el.importBackendBtn.disabled || isLocalImportLocked) return;
       if (!siConnected) {
-        alert("Connect Sales Intel first.");
+        if (el.importHint) {
+          el.importHint.textContent = "Connect Sales Intel in Settings to import leads.";
+          el.importHint.classList.remove("hidden");
+        }
         return;
       }
       if (!currentExtractedLeads || !currentExtractedLeads.length) {
-        alert("No extracted leads ready to import.");
         return;
       }
+
+      // Synchronously lock click event and update button to disabled in-progress state with spinner
+      isLocalImportLocked = true;
+      const count = currentExtractedLeads.length;
       el.importBackendBtn.disabled = true;
-      el.importBackendBtn.textContent = "Importing...";
+      el.importBackendBtn.innerHTML = `<span class="spinner"></span> IMPORTING ${count} LEAD${count === 1 ? "" : "S"}...`;
+
       chrome.runtime.sendMessage(
         { type: "SI_BATCH_IMPORT", leads: currentExtractedLeads },
         (res) => {
-          el.importBackendBtn.disabled = false;
-          el.importBackendBtn.textContent = "Import to Sales Intel";
+          isLocalImportLocked = false;
+
           if (chrome.runtime.lastError || !res || !res.ok) {
-            alert(res?.error || "Import failed.");
+            const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : res?.error || "Import failed.";
+            updateActionButtons();
+            if (res?.status === 401) {
+              checkSalesIntelConnection();
+              renderImportErrorState("Session expired. Please reconnect to Sales Intel.");
+            } else {
+              renderImportErrorState(err);
+            }
             return;
           }
-          alert(`Successfully imported ${res.imported || currentExtractedLeads.length} lead(s)!`);
+
+          // Render persistent outcome banner, breakdown list, and View Leads CTA button in-popup
+          renderImportResultState(res);
+          updateActionButtons();
         }
       );
     });
 
     // Navigation links
     const base = getBaseUrl();
+    if (el.viewImportedLeadsBtn) {
+      el.viewImportedLeadsBtn.addEventListener("click", () => chrome.tabs.create({ url: `${base}/leads` }));
+    }
     el.openAppBtn.addEventListener("click", () => chrome.tabs.create({ url: base }));
     el.viewLeadsBtn.addEventListener("click", () => chrome.tabs.create({ url: `${base}/leads` }));
     el.settingsBtn.addEventListener("click", () => chrome.tabs.create({ url: `${base}/settings` }));

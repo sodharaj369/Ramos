@@ -178,38 +178,68 @@ function resolveApiBase(apiBase) {
   return apiBase;
 }
 
+let isImportInProgress = false;
+
 async function sendBatchImportToBackend(leads) {
+  if (isImportInProgress) {
+    return { ok: false, error: "Import is already in progress." };
+  }
+
   if (!Array.isArray(leads) || leads.length === 0) {
     return { ok: false, error: "No leads provided for import." };
   }
 
-  const { token, apiBase } = await getAuthData();
-  const base = resolveApiBase(apiBase);
-  const endpoint = `${base}/api/public/extension/import`;
-
-  const importPayloads = leads.map((lead) => {
-    return self.SalesIntelSchema ? self.SalesIntelSchema.toBackendImportPayload(lead) : lead;
-  });
-
-  const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
+  isImportInProgress = true;
   try {
+    const { token, apiBase } = await getAuthData();
+    if (!token) {
+      return { ok: false, status: 401, error: "Not connected to Sales Intel. Please connect in Settings." };
+    }
+
+    const base = resolveApiBase(apiBase);
+    const endpoint = `${base}/api/public/extension/import`;
+
+    const importPayloads = leads.map((lead) => {
+      return self.SalesIntelSchema ? self.SalesIntelSchema.toBackendImportPayload(lead) : lead;
+    });
+
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+
     const res = await fetch(endpoint, {
       method: "POST",
       headers,
-      body: JSON.stringify({ leads: importPayloads }),
+      body: JSON.stringify({
+        source: "chrome-extension",
+        search_query: currentRun.sourceQuery || mapsState.searchQuery || null,
+        leads: importPayloads,
+      }),
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        await clearAuth();
+        console.warn("[SI][AUTH] Bearer token rejected (401). Session cleared.");
+        return { ok: false, status: 401, error: "Session expired. Please reconnect to Sales Intel." };
+      }
       const errJson = await res.json().catch(() => ({}));
-      return { ok: false, error: errJson.error || errJson.message || `HTTP error ${res.status}` };
+      return { ok: false, status: res.status, error: errJson.error || errJson.message || `HTTP error ${res.status}` };
     }
 
     const data = await res.json();
-    return { ok: true, imported: data.created || data.processed || importPayloads.length, data };
+    const importedCount = (data.created || 0) + (data.merged || 0);
+    return {
+      ok: true,
+      imported: importedCount > 0 ? importedCount : data.processed || importPayloads.length,
+      created: data.created || 0,
+      merged: data.merged || 0,
+      duplicate: data.duplicate || 0,
+      total: data.total || importPayloads.length,
+      data,
+    };
   } catch (err) {
-    return { ok: false, error: err && err.message ? err.message : "Network error" };
+    return { ok: false, error: err && err.message ? err.message : "Network error during import." };
+  } finally {
+    isImportInProgress = false;
   }
 }
 
