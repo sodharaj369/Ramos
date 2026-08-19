@@ -39,6 +39,10 @@ dist-ssr
 *.key
 .secrets/
 
+# Supabase CLI generated temp & branch state
+supabase/.temp/
+supabase/.branches/
+
 # Local scraper data & temp files
 gmapsdata/
 scraper-data/

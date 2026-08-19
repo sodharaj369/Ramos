@@ -2,7 +2,7 @@
 
 Status: ACTIVE (v1.0.16)
 
-This document specifies the Admin role architecture, role-based access control (RBAC), and Row Level Security (RLS) policies in Sales Intel.
+This document specifies the Admin role architecture, role-based access control (RBAC), Row Level Security (RLS) policies, and administrative configuration controls in Sales Intel.
 
 ---
 
@@ -11,7 +11,7 @@ This document specifies the Admin role architecture, role-based access control (
 The system defines two primary roles via PostgreSQL enum `public.app_role`:
 
 ```sql
-CREATE TYPE public.app_role AS ENUM ('admin', 'member');
+CREATE TYPE public.app_role AS ENUM ('admin', 'member'); 
 ```
 
 ### A. Member (`member`)
@@ -20,67 +20,48 @@ CREATE TYPE public.app_role AS ENUM ('admin', 'member');
   - Can search, discover, import, view, edit, and delete leads created by themselves.
   - Can queue email verification jobs for their own leads.
   - Can connect their own Chrome Extension instance.
+  - Can read public runtime configuration settings.
 
 ### B. Admin (`admin`)
 - **Capabilities**:
   - All standard Member capabilities.
-  - System configuration and provider management.
+  - Access to the **Administration** panel in Settings (`src/components/admin-settings-panel.tsx`).
+  - Ability to modify centralized runtime configuration settings (`public.app_settings`) with server-side Zod validation.
+  - Access to the immutable configuration audit trail (`public.settings_history`).
   - Full management access to ALL leads across all users (`leads_update` & `leads_delete` RLS policies).
   - Ability to inspect background job state across all users (`jobs_update` RLS policy).
-  - System diagnostics and audit history visibility.
 
 ---
 
-## 2. Server-Side Authorization Enforcement
+## 2. Admin Configuration Security Model
 
-Authorization MUST be enforced server-side via Supabase Row Level Security (RLS) policies and database functions.
+```
+Admin User (Browser)
+    │
+    ▼ Server Function Call: updateAdminSetting({ key, value })
+Server-Side Authorization Check: rpc('has_role', { _role: 'admin' })
+    │
+    ├─► IF NOT ADMIN: Reject with 403 Forbidden Error
+    │
+    └─► IF ADMIN:
+         ├── Validate value bounds via Zod schemas (src/lib/config/runtime-config.server.ts)
+         ├── Upsert setting in public.app_settings
+         ├── Record audit trail entry in public.settings_history
+         └── Invalidate in-memory server config cache (5s TTL)
+```
 
 > [!CAUTION]
-> Frontend checks (such as hiding buttons or relying on React state/URL routes) are purely for UI/UX convenience. Server-side RLS policies are the **ONLY** true security boundary.
-
-### A. Database Role Evaluation Helper
-Role checks use the PostgreSQL `SECURITY DEFINER` function:
-
-```sql
-CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role public.app_role)
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = _user_id AND role = _role);
-$$;
-```
-
-Execution is granted exclusively to `service_role` to prevent unauthorized client-side role checks while allowing RLS policy evaluation.
-
-### B. Row Level Security Policies
-
-#### 1. Leads Table (`public.leads`)
-- `leads_select`: `authenticated` users can read all leads (`USING (true)`).
-- `leads_insert`: `authenticated` users can insert leads assigned to themselves (`WITH CHECK (created_by = auth.uid())`).
-- `leads_update`: Allowed if `created_by = auth.uid()` OR user has `admin` role.
-- `leads_delete`: Allowed if `created_by = auth.uid()` OR user has `admin` role.
-
-#### 2. Jobs Table (`public.jobs`)
-- `jobs_select`: `authenticated` users can read jobs (`USING (true)`).
-- `jobs_insert`: `authenticated` users can insert jobs assigned to themselves (`WITH CHECK (user_id = auth.uid())`).
-- `jobs_update`: Allowed if `user_id = auth.uid()` OR user has `admin` role.
-
-#### 3. User Roles Table (`public.user_roles`)
-- Only `service_role` can mutate role assignments (`GRANT ALL ON public.user_roles TO service_role`).
-- Authenticated users can view their own roles (`GRANT SELECT ON public.user_roles TO authenticated`).
+> Admin privileges are enforced server-side. RLS policies on `app_settings` and `settings_history` explicitly require `public.has_role(auth.uid(), 'admin')` for all INSERT, UPDATE, and DELETE operations.
 
 ---
 
-## 3. New User Onboarding Trigger
+## 3. Row Level Security Policies
 
-When a user signs up, the Postgres trigger `on_auth_user_created` executes `handle_new_user()`, automatically inserting a row into `profiles` and defaulting their role to `member` in `user_roles`:
+### A. App Settings Table (`public.app_settings`)
+- `app_settings_select`: `authenticated` users can read settings (`USING (true)`).
+- `app_settings_insert_admin`: ONLY `admin` users can insert settings (`WITH CHECK (public.has_role(auth.uid(), 'admin'))`).
+- `app_settings_update_admin`: ONLY `admin` users can update settings (`USING (public.has_role(auth.uid(), 'admin'))`).
 
-```sql
-CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS TRIGGER
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, full_name)
-  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data ->> 'full_name')
-  ON CONFLICT (id) DO NOTHING;
-  INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'member') ON CONFLICT DO NOTHING;
-  RETURN NEW;
-END; $$;
-```
+### B. Settings History Table (`public.settings_history`)
+- `settings_history_select_admin`: ONLY `admin` users can view audit history (`USING (public.has_role(auth.uid(), 'admin'))`).
+- `settings_history_insert_admin`: ONLY `admin` users or system functions can insert audit history records.

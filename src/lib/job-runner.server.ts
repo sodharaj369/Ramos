@@ -194,6 +194,8 @@ async function processLeadSlice(
   }
 }
 
+import { getRuntimeConfig } from "@/lib/config/runtime-config.server";
+
 async function processVerificationSlice(
   db: DB,
   job: JobRow,
@@ -202,8 +204,9 @@ async function processVerificationSlice(
   userId: string,
 ) {
   const verifier = getEmailVerifier(job.provider);
-  // Bounded concurrency: SMTP-capable verifiers cap simultaneous sessions (default 2).
-  const concurrency = Math.max(1, verifier.maxConcurrency ?? RATE_LIMITS.maxConcurrency);
+  const runtimeConfig = await getRuntimeConfig(db);
+  // Centralized runtime concurrency configuration (default 3)
+  const concurrency = Math.max(1, runtimeConfig.verificationConcurrency ?? verifier.maxConcurrency ?? RATE_LIMITS.maxConcurrency);
   const results = await mapWithLimit(slice, concurrency, async (item) => {
     try {
       const result = await verifier.verify(item.email);

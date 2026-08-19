@@ -12,18 +12,36 @@ export function handleListProviders() {
   };
 }
 
+import { getRuntimeConfig } from "@/lib/config/runtime-config.server";
+
 export async function handleCreateDiscoveryJob(
   db: DB,
   userId: string,
-  data: Record<string, unknown> & { query: string; sourceId: string },
+  data: Record<string, unknown> & { query: string; sourceId: string; limit?: number },
 ) {
+  const runtimeConfig = await getRuntimeConfig(db);
+
+  const sourceId = data.sourceId || runtimeConfig.discoveryDefaultProvider;
+  if (sourceId === "self-hosted-google-maps" && !runtimeConfig.providersSelfHostedGmapsEnabled) {
+    throw new Error("Self-hosted Google Maps scraper provider is currently disabled by administrator.");
+  }
+
+  const requestedLimit = Number(data.limit ?? runtimeConfig.discoveryDefaultLimit);
+  if (requestedLimit > runtimeConfig.discoveryMaxLimit) {
+    throw new Error(
+      `Requested limit (${requestedLimit}) exceeds maximum allowed discovery limit (${runtimeConfig.discoveryMaxLimit}).`,
+    );
+  }
+
+  const params = { ...data, sourceId, limit: requestedLimit };
+
   const { data: job, error } = await db
     .from("jobs")
     .insert({
       type: "discovery",
       label: `Discovery — ${data.query}`,
-      provider: data.sourceId,
-      params: data,
+      provider: sourceId,
+      params,
       user_id: userId,
     })
     .select("id")
@@ -63,12 +81,22 @@ export async function handleCreateVerificationJob(
     items: Array<{ email: string; lead_id?: string | undefined }>;
   },
 ) {
+  const runtimeConfig = await getRuntimeConfig(db);
+
+  if (!runtimeConfig.verificationEnabled) {
+    throw new Error("Email verification subsystem is currently disabled by administrator.");
+  }
+
+  if (!runtimeConfig.featureFlagsBulkVerificationEnabled) {
+    throw new Error("Bulk email verification feature is currently disabled by administrator.");
+  }
+
   const { data: job, error } = await db
     .from("jobs")
     .insert({
       type: "verification",
       label: data.label,
-      provider: data.provider ?? null,
+      provider: data.provider ?? runtimeConfig.verificationDefaultVerifier,
       payload: data.items,
       total: data.items.length,
       user_id: userId,

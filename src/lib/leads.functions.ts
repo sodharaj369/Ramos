@@ -101,6 +101,8 @@ export const listLeads = createServerFn({ method: "POST" })
     return { rows: await attachOwners(context.supabase, rows ?? []), total: count ?? 0 };
   });
 
+import { getRuntimeConfig } from "@/lib/config/runtime-config.server";
+
 export const exportLeads = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -112,6 +114,11 @@ export const exportLeads = createServerFn({ method: "POST" })
       .parse(input ?? {}),
   )
   .handler(async ({ data, context }) => {
+    const runtimeConfig = await getRuntimeConfig(context.supabase);
+    if (!runtimeConfig.featureFlagsCsvExportEnabled) {
+      throw new Error("CSV export feature is currently disabled by system administrator.");
+    }
+
     let query = context.supabase.from("leads").select("*").limit(5000);
     if (data.ids && data.ids.length > 0) {
       query = query.in("id", data.ids);

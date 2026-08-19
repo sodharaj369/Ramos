@@ -230,9 +230,12 @@ export function getEmailVerifier(id?: string | null): EmailVerifier {
   if (id) {
     const found = VERIFIERS.find((v) => v.id === id);
     if (!found) throw new ProviderNotConfiguredError(`Verifier "${id}"`, "Unknown verifier.");
+    if (!found.isConfigured()) {
+      throw new ProviderNotConfiguredError(found.name, "Verifier is currently disabled or unconfigured.");
+    }
     return found;
   }
   const configured = VERIFIERS.find((v) => v.isConfigured());
-  if (!configured) throw new ProviderNotConfiguredError("Email verification", "No verifier configured.");
+  if (!configured) throw new ProviderNotConfiguredError("Email verification", "No verifier configured or active.");
   return configured;
 }

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/app-shell";
 import { ExtensionConnection } from "@/components/extension-connection";
+import { AdminSettingsPanel } from "@/components/admin-settings-panel";
 import { useAuth } from "@/hooks/use-auth";
 import { listProviders } from "@/lib/jobs.functions";
 import { getUsageStats } from "@/lib/verification.functions";
@@ -70,6 +71,10 @@ function SettingsPage() {
 
         <section className="lg:col-span-2">
           <ExtensionConnection />
+        </section>
+
+        <section className="lg:col-span-2 rounded-lg border border-border bg-card p-5">
+          <AdminSettingsPanel />
         </section>
 
         <section className="rounded-lg border border-border bg-card p-5 lg:col-span-2">

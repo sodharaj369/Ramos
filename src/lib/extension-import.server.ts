@@ -8,6 +8,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { RawLead } from "@/lib/domain-types";
 import { recordUsage, upsertLead } from "@/lib/leads.server";
+import { getRuntimeConfig } from "@/lib/config/runtime-config.server";
+import { parseAddressLocation, sanitizeAddress, sanitizeCategory } from "@/lib/normalize";
 
 export const EXTENSION_SOURCE_ID = "chrome-extension";
 export const MAX_BATCH_SIZE = 50;
@@ -82,8 +84,6 @@ export interface ExtensionImportResponse {
   results: ExtensionImportRecordResult[];
 }
 
-import { parseAddressLocation, sanitizeAddress, sanitizeCategory } from "@/lib/normalize";
-
 function toRawLead(parsed: z.infer<typeof extensionLeadSchema>): RawLead {
   const cleanCategory = sanitizeCategory(parsed.category ?? parsed.business_type ?? null);
   const cleanAddr = sanitizeAddress(parsed.address ?? null);
@@ -99,7 +99,6 @@ function toRawLead(parsed: z.infer<typeof extensionLeadSchema>): RawLead {
     country: sanitizeAddress(parsed.country) ?? loc.country ?? null,
     postal_code: parsed.postal_code ?? null,
     phone: parsed.phone ?? null,
-    // V1 never extracts or guesses emails from Google Maps.
     email: null,
     rating: parsed.rating ?? null,
     review_count: parsed.review_count ?? null,
@@ -127,9 +126,20 @@ export async function importExtensionBatch(
   userId: string,
   payload: z.infer<typeof extensionImportSchema>,
 ): Promise<ExtensionImportResponse> {
+  const runtimeConfig = await getRuntimeConfig(db);
+  
+  if (!runtimeConfig.discoveryChromeExtensionEnabled) {
+    throw new Error("Chrome extension lead discovery is currently disabled by administrator.");
+  }
+
+  if (payload.leads.length > runtimeConfig.importBatchSize) {
+    throw new Error(
+      `Batch size (${payload.leads.length}) exceeds maximum allowed import batch size (${runtimeConfig.importBatchSize}).`,
+    );
+  }
+
   const searchQuery = payload.search_query?.trim() || null;
 
-  // Reuse the existing job model so extension runs appear in Jobs history.
   const { data: job } = await db
     .from("jobs")
     .insert({

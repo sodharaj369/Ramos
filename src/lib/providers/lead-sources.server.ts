@@ -29,6 +29,8 @@ export interface LeadSource {
  * The scraper (gosom/google-maps-scraper, MIT) runs as a separate service you
  * deploy yourself; this adapter only calls its HTTP API server-side.
  */
+import { getRuntimeConfig } from "@/lib/config/runtime-config.server";
+
 const selfHostedGoogleMaps: LeadSource = {
   id: SELF_HOSTED_GMAPS_ID,
   name: "Google Maps — Server Scraper (Render)",
@@ -45,7 +47,9 @@ const selfHostedGoogleMaps: LeadSource = {
   estimatedCostPerUnit: 0,
   configurationHint:
     "Deploy the scraper container, then add the GMAPS_SCRAPER_URL secret (plus GMAPS_SCRAPER_API_KEY if your deployment requires one).",
-  isConfigured: gmapsConfigured,
+  isConfigured() {
+    return gmapsConfigured();
+  },
   search: searchSelfHostedGoogleMaps,
 };
 

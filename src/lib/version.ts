@@ -1,5 +1,5 @@
-export const APP_VERSION = "1.0.15";
-export const EXTENSION_VERSION = "1.0.15";
+export const APP_VERSION = "1.0.16";
+export const EXTENSION_VERSION = "1.0.16";
 
 export interface BuildInfo {
   appVersion: string;

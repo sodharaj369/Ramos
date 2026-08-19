@@ -41,6 +41,8 @@ function isBadCachedResult(record: Record<string, any>): boolean {
   return false;
 }
 
+import { getRuntimeConfig } from "@/lib/config/runtime-config.server";
+
 export const verifySingleEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -54,6 +56,15 @@ export const verifySingleEmail = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    const runtimeConfig = await getRuntimeConfig(context.supabase);
+    if (!runtimeConfig.verificationEnabled) {
+      return {
+        cached: false,
+        disabled: true,
+        message: "Email verification is currently disabled by system administrator.",
+      };
+    }
+
     const normalized = normalizeEmail(data.email) ?? data.email.trim().toLowerCase();
 
     if (!data.force) {

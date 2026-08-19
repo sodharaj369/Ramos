@@ -27,9 +27,9 @@ The **Sales Intel** application is a B2B Lead Intelligence and Discovery Platfor
 |   +------------------------------------+   +----------------------------------+   |
 |   | Supabase Backend / Database        |   | Email Verifier Service (Go)      |   |
 |   | (Postgres, Auth, RLS, Edge APIs)   |   | Docker Container (Port 8081)     |   |
-|   +------------------------------------+   +----------------------------------+   |
-|                                            +----------------------------------+   |
-|                                            | (Optional) Server-Side Scraper   |   |
+|   | - app_settings (Runtime Config)    |   +----------------------------------+   |
+|   | - settings_history (Audit Trail)   |   +----------------------------------+   |
+|   +------------------------------------+   | (Optional) Server-Side Scraper   |   |
 |                                            | gosom/google-maps-scraper (8082) |   |
 |                                            +----------------------------------+   |
 +-----------------------------------------------------------------------------------+
@@ -41,47 +41,20 @@ The **Sales Intel** application is a B2B Lead Intelligence and Discovery Platfor
 
 ### A. Frontend Web Application
 - **Framework**: React 19, TanStack Router (`@tanstack/react-router`), TanStack Query (`@tanstack/react-query`), TanStack Start (`@tanstack/react-start`), Vite.
-- **Styling**: Vanilla CSS with Tailwind CSS v4 (`@tailwindcss/vite`), Radix UI primitives (`@radix-ui/react-*`), Lucide icons (`lucide-react`), Sonner toast notifications.
-- **Port**: `http://localhost:8080`.
-- **Role**: Provides lead search UI, lead database table views with rich filtering, verification job triggers, configuration/settings UI, and authentication management.
+- **Admin UI**: Settings → Administration panel (`src/components/admin-settings-panel.tsx`) backed by server functions (`src/lib/admin.functions.ts`).
 
 ### B. Chrome Extension (v1.0.16) — STABLE / FROZEN
 - **Version**: **v1.0.16** (Manifest V3). Source code in [`extension/`](file:///d:/Sales-Intel/extension).
-- **Primary Discovery Engine**: Extracts Google Maps business place detail cards directly in the user's browser tab.
-- **Web App Messaging**: Uses `externally_connectable` web messaging to sync authorization tokens and trigger direct lead imports into the web application backend (`POST /api/public/extension/import`).
+- Extracts Google Maps place card details directly in the user's browser tab.
 
-### C. Supabase Backend & Database
-- **Database**: PostgreSQL with Row Level Security (RLS) enabled on all tables.
-- **Schema / Tables**:
-  - `profiles`: User account details (`id`, `email`, `full_name`).
-  - `user_roles`: Role assignments (`admin`, `member`).
-  - `leads`: Core lead records with unique constraints (`leads_domain_unique`, `leads_name_city_unique`).
-  - `lead_history`: Audit log of lead creation, updates, and enrichment events.
-  - `email_verifications`: Audit trail of email verification attempts and result metadata.
-  - `jobs`: Background jobs for discovery, verification, and lead imports.
-  - `provider_usage`: Tracking for third-party service usage units and estimated costs.
-- **Functions & Triggers**: `handle_new_user()` auto-assigns `member` role upon signup. `has_role(_user_id, _role)` evaluates role membership server-side.
+### C. Centralized Runtime Configuration Engine
+- **Module**: [`src/lib/config/runtime-config.server.ts`](file:///d:/Sales-Intel/src/lib/config/runtime-config.server.ts).
+- **Database Tables**: `app_settings` (typed settings) and `settings_history` (audit trail).
+- **Caching**: In-memory server cache with 5-second TTL.
 
-### D. Email Verifier Microservice
-- **Technology**: Standalone Go microservice located in [`email-verifier-service/`](file:///d:/Sales-Intel/email-verifier-service).
-- **Execution**: Containerized via Docker (`sales-intel-email-verifier`) running on `http://localhost:8081`.
-- **Capabilities**:
-  - RFC syntax validation.
-  - DNS MX record resolution with fallback to A record.
-  - Direct SMTP handshake check (`RCPT TO`).
-  - Catch-all domain detection.
-  - Disposable email domain blacklist.
-  - Role-based account detection (`admin@`, `info@`, `support@`).
+### D. Supabase Backend & Database
+- PostgreSQL with RLS enabled across all tables (`profiles`, `user_roles`, `leads`, `lead_history`, `email_verifications`, `jobs`, `provider_usage`, `app_settings`, `settings_history`).
+- Server-side authorization helpers (`has_role(_user_id, _role)`).
 
-### E. Optional Server-Side Scraper Container
-- **Technology**: `gosom/google-maps-scraper` (Docker container on port 8082).
-- **Status**: Optional / Secondary testing path. Main production discovery is handled by the Chrome Extension.
-
----
-
-## 3. Technology Stack & Dependencies
-
-- **Runtime**: Node.js (v22+ recommended), Go 1.22+ (for email verifier microservice).
-- **Package Manager**: `npm` / `bun`.
-- **Database**: Supabase PostgreSQL.
-- **Build Systems**: Vite 8, Nitro (server bundle generator).
+### E. Email Verifier Microservice
+- Go microservice on port 8081 (`email-verifier-service/`). Direct RFC, DNS, and SMTP handshake validation.

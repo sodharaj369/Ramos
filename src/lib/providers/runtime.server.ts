@@ -28,7 +28,10 @@ export const RATE_LIMITS = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Retry with exponential backoff. Never retries "not configured" failures. */
-export async function withRetry<T>(fn: () => Promise<T>, attempts = RATE_LIMITS.maxAttempts): Promise<T> {
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  attempts = RATE_LIMITS.maxAttempts,
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
