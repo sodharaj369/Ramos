@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.16] - 2026-08-19
 
+### Changed & Fixed — Chrome Extension Import UX Polish & Action Disambiguation
+- **Action Separation ("Run Discovery" vs. "Import")**:
+  - Renamed upper extraction button (`#extractBtn` in Search Result Cards) from `"Import to Sales Intel"` to **`"Run Discovery Again"`** (or `"Run Discovery"`), eliminating user confusion between extraction and database ingestion.
+  - Designated lower button (`#importBackendBtn` in Summary Card) as the **EXACTLY ONE** action responsible for sending discovered leads to Sales Intel.
+- **Dynamic In-Progress State & Spinner**:
+  - On click, `#importBackendBtn` **synchronously** locks local double-submit protection (`isLocalImportLocked = true`), disables the button, and renders a rotating 12px CSS spinner with dynamic count (`<span class="spinner"></span> IMPORTING 5 LEADS...`) before sending background requests.
+  - Handles all exit paths (Success, HTTP 400/500, 401 Session Expiry, Network Error, Exceptions) cleanly without leaving the button locked or stuck.
+- **In-Popup Result Component (Native `alert()` Removal)**:
+  - Completely removed modal browser `alert()` calls from post-import callback execution paths.
+  - Integrated outcome-aware persistent status banner (`#importBanner`) inside summary card:
+    - **Created Only**: `✓ IMPORT COMPLETED` — `5 leads added to Sales Intel`.
+    - **Created + Merged**: `✓ IMPORT COMPLETED` — `5 leads added/enriched to Sales Intel`.
+    - **Duplicate Only**: `✓ IMPORT CHECKED` — `All 5 leads were already in Sales Intel`.
+    - **Partial Failure**: `⚠ IMPORT COMPLETED WITH ISSUES` — `4 leads added — 1 lead failed`.
+    - **Complete Error / 401**: In-popup error banner (`#importErrorBanner` with `⚠ IMPORT FAILED`).
+  - Added primary CTA button **`"VIEW X LEADS IN SALES INTEL"`** navigating directly to `${base}/leads`.
+
 ### Fixed & Added — Configuration Contract Audit & Label Column Synchronization
 - **Database Schema Sync**:
   - Applied migration [`20260819130000_app_settings_label_and_schema_sync.sql`](file:///d:/Sales-Intel/supabase/migrations/20260819130000_app_settings_label_and_schema_sync.sql) to add `label` column (`TEXT NOT NULL DEFAULT ''`) to `public.app_settings`.
