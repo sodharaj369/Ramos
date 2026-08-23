@@ -421,7 +421,7 @@ test("OOXML SCHEMA & XML COMPLIANCE REGRESSION TEST: Generated XLSX contains val
 
   // Verify OOXML Strict Schema Requirements
   assert.ok(stylesXml.includes('<numFmts count="1">'), "styles.xml must declare numFmts block");
-  assert.ok(stylesXml.includes('<numFmt numFmtId="49" formatCode="@"/>'), "numFmtId=49 must be declared");
+  assert.ok(stylesXml.includes('<numFmt numFmtId="164" formatCode="@"/>'), "numFmtId=164 must be declared");
   assert.ok(stylesXml.includes('<u val="single"/>'), "Hyperlink font underline must use val='single'");
   assert.ok(sheetXml.includes('xml:space="preserve"'), "sheet1.xml text nodes must preserve whitespace");
   assert.ok(sheetXml.includes('&amp;'), "Special characters like & must be escaped as &amp;");

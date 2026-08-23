@@ -5,7 +5,8 @@
  * Zero Node.js Buffer dependencies, zero runtime npm packages.
  *
  * Produces 100% ECMA-376 OOXML Strict Compliant Excel Spreadsheets:
- * - Explicit <numFmts> declaration for custom text format (numFmtId=49)
+ * - Mandatory <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+ * - Custom text format numFmtId="164" declared in <numFmts>
  * - Strict element ordering inside <styleSheet> and <font>
  * - Preserved whitespace via xml:space="preserve" on all <t> nodes
  * - Control character sanitization (\x00-\x08, \x0B, \x0C, \x0E-\x1F)
@@ -236,11 +237,11 @@
   </sheets>
 </workbook>`;
 
-    // ECMA-376 OOXML Strict Stylesheet Definition with exact element ordering
+    // ECMA-376 OOXML Strict Stylesheet Definition with exact element ordering and mandatory cellStyles
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <numFmts count="1">
-    <numFmt numFmtId="49" formatCode="@"/>
+    <numFmt numFmtId="164" formatCode="@"/>
   </numFmts>
   <fonts count="4">
     <!-- 0: Default Font -->
@@ -280,9 +281,9 @@
     <!-- 3: Data Row Odd - Standard Text (Light Fill #F8FAFC, Left/Top, Wrapped) -->
     <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
     <!-- 4: Data Row Even - Raw Text Format (Phone/Postal) (Left/Top) -->
-    <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
     <!-- 5: Data Row Odd - Raw Text Format (Phone/Postal) (Left/Top) -->
-    <xf numFmtId="49" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
     <!-- 6: Data Row Even - Numeric (Rating/Reviews) (Right/Top) -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>
     <!-- 7: Data Row Odd - Numeric (Rating/Reviews) (Right/Top) -->
@@ -290,8 +291,11 @@
     <!-- 8: Data Row Even - Hyperlink (Blue/Underline, Left/Top) -->
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
     <!-- 9: Data Row Odd - Hyperlink (Blue/Underline, Left/Top) -->
-    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
   </cellXfs>
+  <cellStyles count="1">
+    <cellStyle name="Normal" xfId="0" builtinId="0"/>
+  </cellStyles>
 </styleSheet>`;
 
     const maxRow = validLeads.length + 1;
