@@ -2,7 +2,7 @@
 
 An internal sales intelligence web application for lead discovery, deduplication, CSV import/export, email verification, and sales signal tracking.
 
-Built with **TanStack Start** (React 19, Vite 8, Tailwind v4) + **Supabase / Lovable Cloud backend** (Postgres, Auth, RLS, Storage).
+Built with **TanStack Start** (React 19, Vite 8, Tailwind v4) + **Local Supabase Docker backend** (Postgres, Auth, RLS, Storage).
 
 ---
 

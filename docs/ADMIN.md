@@ -25,7 +25,7 @@ CREATE TYPE public.app_role AS ENUM ('admin', 'member');
 ### B. Admin (`admin`)
 - **Capabilities**:
   - All standard Member capabilities.
-  - Access to the **Administration** panel in Settings (`src/components/admin-settings-panel.tsx`).
+  - Access to the dedicated **System Configuration** operational console at `/settings/system` (`src/routes/_authenticated/settings.system.tsx` & `src/components/admin-settings-panel.tsx`), accessible via an `ADMINISTRATION` sidebar menu entry rendered exclusively for admins.
   - Ability to modify centralized runtime configuration settings (`public.app_settings`) with server-side Zod validation.
   - Access to the immutable configuration audit trail (`public.settings_history`).
   - Full management access to ALL leads across all users (`leads_update` & `leads_delete` RLS policies).

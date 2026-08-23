@@ -176,4 +176,8 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+
+  *:focus-visible {
+    outline-color: var(--color-ring);
+  }
 }

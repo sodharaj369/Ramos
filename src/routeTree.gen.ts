@@ -18,11 +18,12 @@ import { Route as AuthenticatedDocumentationRouteImport } from './routes/_authen
 import { Route as AuthenticatedFinderRouteImport } from './routes/_authenticated/finder'
 import { Route as AuthenticatedImportRouteImport } from './routes/_authenticated/import'
 import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/jobs'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedVerificationRouteImport } from './routes/_authenticated/verification'
 import { Route as AuthenticatedVerificationHistoryRouteImport } from './routes/_authenticated/verification-history'
 import { Route as AuthenticatedLeadsIndexRouteImport } from './routes/_authenticated/leads.index'
 import { Route as AuthenticatedLeadsIdRouteImport } from './routes/_authenticated/leads.$id'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
+import { Route as AuthenticatedSettingsSystemRouteImport } from './routes/_authenticated/settings.system'
 import { Route as ApiPublicExtensionImportRouteImport } from './routes/api/public/extension/import'
 import { Route as ApiPublicExtensionStatusRouteImport } from './routes/api/public/extension/status'
 
@@ -71,11 +72,6 @@ const AuthenticatedJobsRoute = AuthenticatedJobsRouteImport.update({
   path: '/jobs',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedVerificationRoute =
   AuthenticatedVerificationRouteImport.update({
     id: '/verification',
@@ -98,6 +94,18 @@ const AuthenticatedLeadsIdRoute = AuthenticatedLeadsIdRouteImport.update({
   path: '/leads/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSettingsSystemRoute =
+  AuthenticatedSettingsSystemRouteImport.update({
+    id: '/settings/system',
+    path: '/settings/system',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiPublicExtensionImportRoute =
   ApiPublicExtensionImportRouteImport.update({
     id: '/api/public/extension/import',
@@ -120,11 +128,12 @@ export interface FileRoutesByFullPath {
   '/finder': typeof AuthenticatedFinderRoute
   '/import': typeof AuthenticatedImportRoute
   '/jobs': typeof AuthenticatedJobsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
   '/verification': typeof AuthenticatedVerificationRoute
   '/verification-history': typeof AuthenticatedVerificationHistoryRoute
   '/leads/$id': typeof AuthenticatedLeadsIdRoute
+  '/settings/system': typeof AuthenticatedSettingsSystemRoute
   '/leads/': typeof AuthenticatedLeadsIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/public/extension/import': typeof ApiPublicExtensionImportRoute
   '/api/public/extension/status': typeof ApiPublicExtensionStatusRoute
 }
@@ -137,11 +146,12 @@ export interface FileRoutesByTo {
   '/finder': typeof AuthenticatedFinderRoute
   '/import': typeof AuthenticatedImportRoute
   '/jobs': typeof AuthenticatedJobsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
   '/verification': typeof AuthenticatedVerificationRoute
   '/verification-history': typeof AuthenticatedVerificationHistoryRoute
   '/leads/$id': typeof AuthenticatedLeadsIdRoute
+  '/settings/system': typeof AuthenticatedSettingsSystemRoute
   '/leads': typeof AuthenticatedLeadsIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
   '/api/public/extension/import': typeof ApiPublicExtensionImportRoute
   '/api/public/extension/status': typeof ApiPublicExtensionStatusRoute
 }
@@ -156,11 +166,12 @@ export interface FileRoutesById {
   '/_authenticated/finder': typeof AuthenticatedFinderRoute
   '/_authenticated/import': typeof AuthenticatedImportRoute
   '/_authenticated/jobs': typeof AuthenticatedJobsRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/verification': typeof AuthenticatedVerificationRoute
   '/_authenticated/verification-history': typeof AuthenticatedVerificationHistoryRoute
   '/_authenticated/leads/$id': typeof AuthenticatedLeadsIdRoute
+  '/_authenticated/settings/system': typeof AuthenticatedSettingsSystemRoute
   '/_authenticated/leads/': typeof AuthenticatedLeadsIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/api/public/extension/import': typeof ApiPublicExtensionImportRoute
   '/api/public/extension/status': typeof ApiPublicExtensionStatusRoute
 }
@@ -175,11 +186,12 @@ export interface FileRouteTypes {
     | '/finder'
     | '/import'
     | '/jobs'
-    | '/settings'
     | '/verification'
     | '/verification-history'
     | '/leads/$id'
+    | '/settings/system'
     | '/leads/'
+    | '/settings/'
     | '/api/public/extension/import'
     | '/api/public/extension/status'
   fileRoutesByTo: FileRoutesByTo
@@ -192,11 +204,12 @@ export interface FileRouteTypes {
     | '/finder'
     | '/import'
     | '/jobs'
-    | '/settings'
     | '/verification'
     | '/verification-history'
     | '/leads/$id'
+    | '/settings/system'
     | '/leads'
+    | '/settings'
     | '/api/public/extension/import'
     | '/api/public/extension/status'
   id:
@@ -210,11 +223,12 @@ export interface FileRouteTypes {
     | '/_authenticated/finder'
     | '/_authenticated/import'
     | '/_authenticated/jobs'
-    | '/_authenticated/settings'
     | '/_authenticated/verification'
     | '/_authenticated/verification-history'
     | '/_authenticated/leads/$id'
+    | '/_authenticated/settings/system'
     | '/_authenticated/leads/'
+    | '/_authenticated/settings/'
     | '/api/public/extension/import'
     | '/api/public/extension/status'
   fileRoutesById: FileRoutesById
@@ -293,13 +307,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedJobsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/verification': {
       id: '/_authenticated/verification'
       path: '/verification'
@@ -328,6 +335,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeadsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settings/system': {
+      id: '/_authenticated/settings/system'
+      path: '/settings/system'
+      fullPath: '/settings/system'
+      preLoaderRoute: typeof AuthenticatedSettingsSystemRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/public/extension/import': {
       id: '/api/public/extension/import'
       path: '/api/public/extension/import'
@@ -351,11 +372,12 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFinderRoute: typeof AuthenticatedFinderRoute
   AuthenticatedImportRoute: typeof AuthenticatedImportRoute
   AuthenticatedJobsRoute: typeof AuthenticatedJobsRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedVerificationRoute: typeof AuthenticatedVerificationRoute
   AuthenticatedVerificationHistoryRoute: typeof AuthenticatedVerificationHistoryRoute
   AuthenticatedLeadsIdRoute: typeof AuthenticatedLeadsIdRoute
+  AuthenticatedSettingsSystemRoute: typeof AuthenticatedSettingsSystemRoute
   AuthenticatedLeadsIndexRoute: typeof AuthenticatedLeadsIndexRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -364,11 +386,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFinderRoute: AuthenticatedFinderRoute,
   AuthenticatedImportRoute: AuthenticatedImportRoute,
   AuthenticatedJobsRoute: AuthenticatedJobsRoute,
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedVerificationRoute: AuthenticatedVerificationRoute,
   AuthenticatedVerificationHistoryRoute: AuthenticatedVerificationHistoryRoute,
   AuthenticatedLeadsIdRoute: AuthenticatedLeadsIdRoute,
+  AuthenticatedSettingsSystemRoute: AuthenticatedSettingsSystemRoute,
   AuthenticatedLeadsIndexRoute: AuthenticatedLeadsIndexRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

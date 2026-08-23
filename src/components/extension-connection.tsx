@@ -60,7 +60,7 @@ export function ExtensionConnection({ compact = false }: { compact?: boolean }) 
       : "v1.0.1 · Disconnected";
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-lg border border-border bg-card p-4.5 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Puzzle className="size-4 text-primary" />

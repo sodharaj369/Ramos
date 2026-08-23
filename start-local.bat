@@ -27,7 +27,79 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] Docker environment verified.
 echo.
 
-rem 3. Check Port 8080 (Sales Intel Web App)
+rem 3. Verify Local Supabase Stack & Recover Stopped Containers
+echo [Sales Intel] Starting local Supabase...
+set "AUTH_RECOVERED=0"
+set "SUPABASE_FAILED=0"
+
+set "CRITICAL_SUPABASE_CONTAINERS=supabase_db_local supabase_auth_local supabase_kong_local supabase_rest_local supabase_realtime_local supabase_storage_local supabase_inbucket_local"
+
+for %%c in (%CRITICAL_SUPABASE_CONTAINERS%) do (
+    call :check_container_status %%c > "%TEMP%\%%c_status.txt" 2>&1
+    set /p CONTAINER_STAT=<"%TEMP%\%%c_status.txt"
+    del "%TEMP%\%%c_status.txt" >nul 2>&1
+
+    if "!CONTAINER_STAT!"=="STOPPED" (
+        echo [Sales Intel] Starting stopped container %%c...
+        docker start %%c >nul 2>&1
+        if "%%c"=="supabase_auth_local" set "AUTH_RECOVERED=1"
+    )
+)
+
+rem If Auth container was started/recovered, restart Kong to flush internal DNS cache
+if "!AUTH_RECOVERED!"=="1" (
+    echo [Sales Intel] Refreshing Kong API gateway DNS cache...
+    docker restart supabase_kong_local >nul 2>&1
+)
+
+echo [Sales Intel] Checking Supabase Auth...
+
+rem Final verification of mandatory Supabase services
+call :check_container_status supabase_auth_local > "%TEMP%\auth_final.txt" 2>&1
+set /p AUTH_FINAL=<"%TEMP%\auth_final.txt"
+del "%TEMP%\auth_final.txt" >nul 2>&1
+
+call :check_container_status supabase_inbucket_local > "%TEMP%\mail_final.txt" 2>&1
+set /p MAIL_FINAL=<"%TEMP%\mail_final.txt"
+del "%TEMP%\mail_final.txt" >nul 2>&1
+
+call :check_container_status supabase_kong_local > "%TEMP%\kong_final.txt" 2>&1
+set /p KONG_FINAL=<"%TEMP%\kong_final.txt"
+del "%TEMP%\kong_final.txt" >nul 2>&1
+
+if not "!AUTH_FINAL!"=="RUNNING" (
+    echo [Sales Intel] [FAIL] Supabase Auth: STOPPED
+    set "SUPABASE_FAILED=1"
+) else (
+    echo [Sales Intel] Supabase Auth: RUNNING
+)
+
+if not "!MAIL_FINAL!"=="RUNNING" (
+    echo [Sales Intel] [FAIL] Mailpit: STOPPED
+    set "SUPABASE_FAILED=1"
+) else (
+    echo [Sales Intel] Mailpit: RUNNING
+)
+
+if not "!KONG_FINAL!"=="RUNNING" (
+    echo [Sales Intel] [FAIL] Kong API: STOPPED
+    set "SUPABASE_FAILED=1"
+) else (
+    echo [Sales Intel] Kong API: RUNNING
+)
+
+if "!SUPABASE_FAILED!"=="1" (
+    echo.
+    echo [ERROR] Local Supabase stack failed to start critical services.
+    echo Please check Docker logs and try restarting Docker Desktop.
+    echo.
+    exit /b 1
+)
+
+echo [Sales Intel] Local Supabase: READY
+echo.
+
+rem 4. Check Port 8080 (Sales Intel Web App)
 set "APP_ALREADY_RUNNING=0"
 call :check_http_health "http://localhost:8080"
 if %ERRORLEVEL% equ 0 (
@@ -43,7 +115,7 @@ if %ERRORLEVEL% equ 0 (
     )
 )
 
-rem 4. Check Port 8081 (Email Verifier Container)
+rem 5. Check Port 8081 (Email Verifier Container)
 set "FORCE_REBUILD=0"
 if /i "%~1"=="rebuild" set "FORCE_REBUILD=1"
 if /i "%~1"=="--rebuild" set "FORCE_REBUILD=1"
@@ -89,7 +161,7 @@ if "!VERIFIER_STATUS!"=="RUNNING" (
     )
 )
 
-rem 5. Check Port 8082 (Google Maps Scraper Container)
+rem 6. Check Port 8082 (Google Maps Scraper Container)
 set "GMAPS_ALREADY_RUNNING=0"
 call :check_container_status sales-intel-gmaps > "%TEMP%\gmaps_status.txt" 2>&1
 set /p GMAPS_STATUS=<"%TEMP%\gmaps_status.txt"
@@ -115,7 +187,7 @@ if "!GMAPS_STATUS!"=="RUNNING" (
     )
 )
 
-rem 6. Start Sales Intel web app in separate window if not running
+rem 7. Start Sales Intel web app in separate window if not running
 if "!APP_ALREADY_RUNNING!"=="0" (
     call :check_port_occupied 8080 >nul 2>&1
     if !ERRORLEVEL! equ 0 (
@@ -124,7 +196,7 @@ if "!APP_ALREADY_RUNNING!"=="0" (
     )
 )
 
-rem 7. Open Docker log view windows
+rem 8. Open Docker log view windows
 call :check_container_status sales-intel-email-verifier > "%TEMP%\verifier_status.txt" 2>&1
 set /p VERIFIER_STATUS=<"%TEMP%\verifier_status.txt"
 if "!VERIFIER_STATUS!"=="RUNNING" (
@@ -141,10 +213,11 @@ echo.
 echo Waiting for services to respond...
 echo.
 
-rem 8. Health Checks Polling
+rem 9. Health Checks Polling
 set "STATUS_APP=FAIL"
 set "STATUS_VERIFIER=FAIL"
 set "STATUS_GMAPS=FAIL"
+set "STATUS_AUTH=FAIL"
 
 set "MAX_POLLS=15"
 
@@ -161,8 +234,12 @@ for /l %%k in (1,1,%MAX_POLLS%) do (
         call :check_http_health "http://localhost:8082"
         if !ERRORLEVEL! equ 0 set "STATUS_GMAPS=OK"
     )
+    if "!STATUS_AUTH!"=="FAIL" (
+        call :check_http_health "http://127.0.0.1:54321/auth/v1/health"
+        if !ERRORLEVEL! equ 0 set "STATUS_AUTH=OK"
+    )
 
-    if "!STATUS_APP!"=="OK" if "!STATUS_VERIFIER!"=="OK" if "!STATUS_GMAPS!"=="OK" goto :health_done
+    if "!STATUS_APP!"=="OK" if "!STATUS_VERIFIER!"=="OK" if "!STATUS_GMAPS!"=="OK" if "!STATUS_AUTH!"=="OK" goto :health_done
     ping 127.0.0.1 -n 3 >nul
 )
 
@@ -185,6 +262,11 @@ if "!STATUS_GMAPS!"=="OK" (
     echo [OK] Google Maps      :8082
 ) else (
     echo [FAIL] Google Maps      :8082
+)
+if "!STATUS_AUTH!"=="OK" (
+    echo [OK] Supabase Auth    :54321
+) else (
+    echo [FAIL] Supabase Auth    :54321
 )
 echo ========================================
 echo.
@@ -217,5 +299,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$n = Get-NetTCPConnectio
 exit /b %ERRORLEVEL%
 
 :check_container_status
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$name = '%~1'; $running = docker ps --filter ('name=' + $name) --format '{{.Names}}'; if ($running -eq $name) { Write-Host 'RUNNING'; exit 0 }; $all = docker ps -a --filter ('name=' + $name) --format '{{.Names}}'; if ($all -eq $name) { Write-Host 'STOPPED'; exit 0 }; Write-Host 'MISSING'; exit 0"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$name = '%~1'; $running = docker ps --filter ('name=' + $name) --filter 'status=running' --format '{{.Names}}'; if ($running -eq $name) { Write-Host 'RUNNING'; exit 0 }; $all = docker ps -a --filter ('name=' + $name) --format '{{.Names}}'; if ($all -eq $name) { Write-Host 'STOPPED'; exit 0 }; Write-Host 'MISSING'; exit 0"
 exit /b 0

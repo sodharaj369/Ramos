@@ -28,6 +28,147 @@ export interface AdminSettingsSection {
   items: AdminSettingItem[];
 }
 
+export const CANONICAL_SETTINGS_METADATA: Record<
+  string,
+  {
+    category: string;
+    name: string;
+    description: string;
+    defaultValue: unknown;
+    valueType: string;
+    isSecret: boolean;
+  }
+> = {
+  "discovery.chrome_extension_enabled": {
+    category: "discovery",
+    name: "Chrome Extension Discovery Enabled",
+    description: "Master switch enabling or disabling Chrome Extension lead extraction system-wide.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+  "discovery.default_limit": {
+    category: "discovery",
+    name: "Default Discovery Limit",
+    description: "Default number of leads extracted per Google Maps discovery job.",
+    defaultValue: 5,
+    valueType: "number",
+    isSecret: false,
+  },
+  "discovery.max_limit": {
+    category: "discovery",
+    name: "Maximum Discovery Limit",
+    description: "Maximum allowed lead extraction limit per Google Maps discovery job.",
+    defaultValue: 50,
+    valueType: "number",
+    isSecret: false,
+  },
+  "discovery.default_provider": {
+    category: "discovery",
+    name: "Default Discovery Provider",
+    description: "Primary lead discovery engine used for new search jobs.",
+    defaultValue: "chrome-extension",
+    valueType: "string",
+    isSecret: false,
+  },
+  "discovery.job_timeout_ms": {
+    category: "discovery",
+    name: "Discovery Job Timeout (ms)",
+    description: "Maximum execution time in milliseconds before a discovery job is marked timed out.",
+    defaultValue: 360000,
+    valueType: "number",
+    isSecret: false,
+  },
+  "discovery.retry_count": {
+    category: "discovery",
+    name: "Max Discovery Retries",
+    description: "Number of retry attempts for failed background discovery requests.",
+    defaultValue: 3,
+    valueType: "number",
+    isSecret: false,
+  },
+  "import.batch_size": {
+    category: "import",
+    name: "Lead Import Batch Size",
+    description: "Number of leads ingested per batch during extension or CSV imports.",
+    defaultValue: 50,
+    valueType: "number",
+    isSecret: false,
+  },
+  "verification.enabled": {
+    category: "verification",
+    name: "Master Verification Switch",
+    description: "Global toggle enabling or disabling the email verification subsystem.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+  "verification.default_verifier": {
+    category: "verification",
+    name: "Default Email Verifier",
+    description: "Primary email verifier provider utilized for lead email validation.",
+    defaultValue: "aftership-smtp",
+    valueType: "string",
+    isSecret: false,
+  },
+  "verification.concurrency": {
+    category: "verification",
+    name: "Verification Concurrency",
+    description: "Maximum concurrent email verification requests executed in parallel.",
+    defaultValue: 3,
+    valueType: "number",
+    isSecret: false,
+  },
+  "verification.timeout_ms": {
+    category: "verification",
+    name: "Verification Timeout (ms)",
+    description: "Socket connection timeout in milliseconds for verification attempts.",
+    defaultValue: 8000,
+    valueType: "number",
+    isSecret: false,
+  },
+  "providers.self_hosted_gmaps_enabled": {
+    category: "providers",
+    name: "Self-Hosted Google Maps Provider",
+    description: "Enable or disable self-hosted scraper integration for Google Maps discovery.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+  "providers.aftership_smtp_enabled": {
+    category: "providers",
+    name: "AfterShip SMTP Verifier",
+    description: "Enable or disable AfterShip SMTP verification service provider.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+  "providers.builtin_dns_enabled": {
+    category: "providers",
+    name: "Built-in DNS Fallback Verifier",
+    description: "Enable or disable built-in DNS/MX verification fallback provider.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+  "feature_flags.csv_export_enabled": {
+    category: "feature_flags",
+    name: "CSV Export Capability",
+    description: "Global feature flag controlling lead CSV export capability for users.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+  "feature_flags.bulk_verification_enabled": {
+    category: "feature_flags",
+    name: "Bulk Verification Capability",
+    description: "Global feature flag controlling bulk email verification capability for users.",
+    defaultValue: true,
+    valueType: "boolean",
+    isSecret: false,
+  },
+};
+
 async function verifyAdminRole(supabase: any, userId: string): Promise<boolean> {
   const { data, error } = await supabase.rpc("has_role", {
     _user_id: userId,
@@ -67,6 +208,7 @@ export const getAdminSettingsData = createServerFn({ method: "GET" })
 
     if (error) throw new Error(error.message);
 
+    const dbRowMap = new Map((rows ?? []).map((r: any) => [r.key, r]));
     const userIds = Array.from(new Set((rows ?? []).map((r: any) => r.updated_by).filter(Boolean)));
     const { data: profiles } = userIds.length
       ? await context.supabase.from("profiles").select("id,email,full_name").in("id", userIds)
@@ -78,18 +220,24 @@ export const getAdminSettingsData = createServerFn({ method: "GET" })
     const isSmtpConfigured = Boolean(smtpConfig.baseUrl);
     const isScraperConfigured = Boolean(process.env["GMAPS_SCRAPER_URL"]);
 
-    const items: AdminSettingItem[] = (rows ?? []).map((r: any) => ({
-      key: r.key,
-      category: r.category,
-      name: r.label || r.key.split(".").slice(1).join(" ").replace(/_/g, " ").toUpperCase(),
-      description: r.description,
-      value: r.is_secret ? "[MASKED]" : r.value,
-      valueType: r.value_type,
-      isSecret: r.is_secret,
-      updatedAt: r.updated_at,
-      updatedBy: r.updated_by,
-      updatedByName: r.updated_by ? profileMap.get(r.updated_by) ?? null : null,
-    }));
+    // Merge database rows with canonical setting definitions so all 16 settings are always represented
+    const items: AdminSettingItem[] = Object.entries(CANONICAL_SETTINGS_METADATA).map(
+      ([key, meta]) => {
+        const row = dbRowMap.get(key);
+        return {
+          key,
+          category: meta.category,
+          name: row?.label || meta.name,
+          description: row?.description || meta.description,
+          value: row ? (row.is_secret ? "[MASKED]" : row.value) : meta.defaultValue,
+          valueType: meta.valueType,
+          isSecret: meta.isSecret,
+          updatedAt: row?.updated_at ?? null,
+          updatedBy: row?.updated_by ?? null,
+          updatedByName: row?.updated_by ? profileMap.get(row.updated_by) ?? null : null,
+        };
+      },
+    );
 
     // Add virtual secret status indicators (read-only status cards)
     const secretItems: AdminSettingItem[] = [

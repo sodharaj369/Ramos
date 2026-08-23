@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
@@ -136,8 +136,8 @@ function FinderPage() {
       title="Lead Finder"
       description="Describe the businesses you want. Only publicly available company data is collected."
       actions={
-        <Button variant="outline" size="sm" onClick={() => router.navigate({ to: "/leads" })}>
-          Go to leads
+        <Button asChild variant="outline" size="sm">
+          <Link to="/leads">Go to leads</Link>
         </Button>
       }
     >

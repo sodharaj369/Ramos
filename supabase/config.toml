@@ -1,1 +1,17 @@
-project_id = "euvnzjtndwpeuvluvxgi"
+project_id = "local"
+
+[auth]
+enabled = true
+site_url = "http://localhost:8080"
+additional_redirect_urls = [
+  "http://localhost:8080/**",
+  "http://localhost:5173/**",
+  "http://127.0.0.1:54321/**"
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+double_confirm_changes = true
