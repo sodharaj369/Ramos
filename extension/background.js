@@ -1,5 +1,5 @@
 /**
- * Background Service Worker for Sales Intel Chrome Extension (v1.0.16)
+ * Background Service Worker for RAMOS Chrome Extension (v1.0.1)
  * Manifest V3 Safe Messaging Architecture with Resilient Content-Script Reconnection.
  * Single Authority for Discovery Session & Run State Isolation.
  */
@@ -8,7 +8,7 @@ const getExtensionVersion = () => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return "1.0.16";
+    return "1.0.1";
   }
 };
 
@@ -303,7 +303,7 @@ function executeExportDownload(customSendResponse) {
 
   const sanitize = (q) => (q || "google-maps").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const filename = `sales-intel-${sanitize(sourceQuery)}-${dateStr}.csv`;
+  const filename = `ramos-${sanitize(sourceQuery)}-${dateStr}.csv`;
 
   console.log(`[SI][EXPORT_FLOW][DOWNLOAD_REQUEST] filename="${filename}"`);
 

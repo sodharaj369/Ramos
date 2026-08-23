@@ -26,6 +26,8 @@ const requiredDocs = [
   'RAMOS_CLEANUP_PLAN.md',
   'docs/RAMOS_ARCHITECTURE.md',
   'docs/RAMOS_EXTRACTION_RULES.md',
+  'docs/RAMOS_INTERNAL_AUDIT.md',
+  'docs/RAMOS_BRAND_GUIDELINES.md',
   'docs/chrome-extension.md',
 ];
 

@@ -6,11 +6,11 @@ const distDir = path.resolve("dist");
 
 function verifyParity() {
   console.log("====================================================");
-  console.log("  VERIFYING RAMOS PACKAGED EXTENSION PARITY (v1.0.0)");
+  console.log("  VERIFYING RAMOS PACKAGED EXTENSION PARITY (v1.0.1)");
   console.log("====================================================\n");
 
   const manifestPath = path.join(srcDir, "manifest.json");
-  const zipPath = path.join(distDir, "ramos-maps-connector-v1.0.0.zip");
+  const zipPath = path.join(distDir, "ramos-maps-connector-v1.0.1.zip");
 
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`Manifest missing at ${manifestPath}`);
@@ -24,10 +24,10 @@ function verifyParity() {
   console.log("Package Version:", manifest.version);
   console.log("Zip Artifact Path:", zipPath);
 
-  if (manifest.version === "1.0.0" && manifest.name === "RAMOS Maps Connector") {
-    console.log("\n[PASS] RAMOS Extension source and packaged distribution artifact are 100% verified (v1.0.0).");
+  if (manifest.version === "1.0.1" && manifest.name === "RAMOS – Maps Lead Extractor") {
+    console.log("\n[PASS] RAMOS Extension source and packaged distribution artifact are 100% verified (v1.0.1).");
   } else {
-    throw new Error("Parity check failed!");
+    throw new Error(`Parity check failed! Expected v1.0.1 'RAMOS – Maps Lead Extractor', got v${manifest.version} '${manifest.name}'`);
   }
 }
 

@@ -1,4 +1,4 @@
-# RAMOS — Standalone Google Maps Business Extractor (v1.0.0)
+# RAMOS – Maps Lead Extractor (v1.0.1)
 
 A standalone Manifest V3 Chrome Extension for Google Maps lead extraction, sequential detail-panel enrichment, canonical lead normalization, and local CSV export.
 
@@ -12,7 +12,7 @@ RAMOS runs completely inside the user's browser without external API servers, ba
 - **Sequential Candidate Queue** — Single-flight candidate tracking with per-candidate bounded timeouts (15s).
 - **Identity Matching** — Strict business identity check (`expectedName` vs `panelName`) to guarantee zero false-positive panel assignments.
 - **Rich Data Fields** — Company name, phone, website, address, city, region, country, postal code, rating, reviews, opening status, price range, booking/ordering/menu URLs.
-- **Standalone Local CSV Export** — Export clean UTF-8 BOM CSV files directly via `chrome.downloads`.
+- **Standalone Local CSV Export** — Export clean UTF-8 BOM CSV files directly via `chrome.downloads` (`ramos-${query}-${date}.csv`).
 
 ---
 
@@ -27,13 +27,14 @@ RAMOS runs completely inside the user's browser without external API servers, ba
 ## Testing & Packaging
 
 - **Run Unit Tests**: `npm test`
-- **Package Extension**: `npm run package:extension` (generates `dist/ramos-maps-connector-v1.0.0.zip`)
+- **Package Extension**: `npm run package:extension` (generates `dist/ramos-maps-connector-v1.0.1.zip`)
 - **Check Project Consistency**: `npm run check:consistency`
 
 ---
 
 ## Documentation
 
+- **Brand Guidelines**: [`docs/RAMOS_BRAND_GUIDELINES.md`](docs/RAMOS_BRAND_GUIDELINES.md)
 - **Architecture Specification**: [`RAMOS_CURRENT_ARCHITECTURE.md`](RAMOS_CURRENT_ARCHITECTURE.md) & [`docs/RAMOS_ARCHITECTURE.md`](docs/RAMOS_ARCHITECTURE.md)
 - **Extraction Rules & Selectors**: [`docs/RAMOS_EXTRACTION_RULES.md`](docs/RAMOS_EXTRACTION_RULES.md)
-- **Cleanup Audit Plan**: [`RAMOS_CLEANUP_PLAN.md`](RAMOS_CLEANUP_PLAN.md)
+- **Master Internal Audit**: [`docs/RAMOS_INTERNAL_AUDIT.md`](docs/RAMOS_INTERNAL_AUDIT.md)

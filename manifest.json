@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "RAMOS Maps Connector",
-  "version": "1.0.0",
-  "description": "Standalone Chrome extension for Google Maps business discovery, detail enrichment, and CSV export.",
+  "name": "RAMOS – Maps Lead Extractor",
+  "short_name": "RAMOS",
+  "version": "1.0.1",
+  "description": "Extract business details from Google Maps and export clean leads to CSV.",
   "permissions": ["storage", "tabs", "scripting", "downloads"],
   "host_permissions": [
     "https://www.google.com/maps*",
@@ -12,10 +13,20 @@
   "background": { "service_worker": "background.js" },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "RAMOS Maps Connector",
-    "default_icon": { "128": "icon.png" }
+    "default_title": "RAMOS – Maps Lead Extractor",
+    "default_icon": {
+      "16": "assets/ramos-icon-16.png",
+      "32": "assets/ramos-icon-32.png",
+      "48": "assets/ramos-icon-48.png",
+      "128": "assets/ramos-icon-128.png"
+    }
   },
-  "icons": { "48": "icon.png", "128": "icon.png" },
+  "icons": {
+    "16": "assets/ramos-icon-16.png",
+    "32": "assets/ramos-icon-32.png",
+    "48": "assets/ramos-icon-48.png",
+    "128": "assets/ramos-icon-128.png"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -40,7 +51,15 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["popup.html", "popup.js", "popup.css", "icon.png"],
+      "resources": [
+        "popup.html",
+        "popup.js",
+        "popup.css",
+        "assets/ramos-icon-16.png",
+        "assets/ramos-icon-32.png",
+        "assets/ramos-icon-48.png",
+        "assets/ramos-icon-128.png"
+      ],
       "matches": ["<all_urls>"]
     }
   ]
