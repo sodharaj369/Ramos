@@ -9,7 +9,7 @@
   } else {
     root.SalesIntelValidators = factory();
   }
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
   const UI_TITLE_BLACKLIST = new Set([

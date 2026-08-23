@@ -137,111 +137,7 @@ function checkAndResetSession(newQuery, newUrl) {
   }
 }
 
-// ─── AUTH STORAGE HELPERS ───────────────────────────────────────────────────
-
-async function getAuthData() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(["si_token", "si_email", "si_api_base"], (result) => {
-      resolve({
-        token: result.si_token || null,
-        email: result.si_email || null,
-        apiBase: result.si_api_base || "http://localhost:8080",
-      });
-    });
-  });
-}
-
-async function setAuthData(token, email, apiBase) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set(
-      {
-        si_token: token,
-        si_email: email,
-        si_api_base: apiBase || "http://localhost:8080",
-      },
-      resolve
-    );
-  });
-}
-
-async function clearAuth() {
-  return new Promise((resolve) => {
-    chrome.storage.local.remove(["si_token", "si_email", "si_api_base"], resolve);
-  });
-}
-
-function resolveApiBase(apiBase) {
-  if (!apiBase) return "http://localhost:8080";
-  if (apiBase.includes("localhost:5173") || apiBase.includes("localhost:3000") || apiBase.includes("localhost:4173")) {
-    return "http://localhost:8080";
-  }
-  return apiBase;
-}
-
-let isImportInProgress = false;
-
-async function sendBatchImportToBackend(leads) {
-  if (isImportInProgress) {
-    return { ok: false, error: "Import is already in progress." };
-  }
-
-  if (!Array.isArray(leads) || leads.length === 0) {
-    return { ok: false, error: "No leads provided for import." };
-  }
-
-  isImportInProgress = true;
-  try {
-    const { token, apiBase } = await getAuthData();
-    if (!token) {
-      return { ok: false, status: 401, error: "Not connected to Sales Intel. Please connect in Settings." };
-    }
-
-    const base = resolveApiBase(apiBase);
-    const endpoint = `${base}/api/public/extension/import`;
-
-    const importPayloads = leads.map((lead) => {
-      return self.SalesIntelSchema ? self.SalesIntelSchema.toBackendImportPayload(lead) : lead;
-    });
-
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        source: "chrome-extension",
-        search_query: currentRun.sourceQuery || mapsState.searchQuery || null,
-        leads: importPayloads,
-      }),
-    });
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        await clearAuth();
-        console.warn("[SI][AUTH] Bearer token rejected (401). Session cleared.");
-        return { ok: false, status: 401, error: "Session expired. Please reconnect to Sales Intel." };
-      }
-      const errJson = await res.json().catch(() => ({}));
-      return { ok: false, status: res.status, error: errJson.error || errJson.message || `HTTP error ${res.status}` };
-    }
-
-    const data = await res.json();
-    const importedCount = (data.created || 0) + (data.merged || 0);
-    return {
-      ok: true,
-      imported: importedCount > 0 ? importedCount : data.processed || importPayloads.length,
-      created: data.created || 0,
-      merged: data.merged || 0,
-      duplicate: data.duplicate || 0,
-      total: data.total || importPayloads.length,
-      data,
-    };
-  } catch (err) {
-    return { ok: false, error: err && err.message ? err.message : "Network error during import." };
-  } finally {
-    isImportInProgress = false;
-  }
-}
+// ─── SAFE MESSAGING HELPERS (MV3 Resilient) ─────────────────────────────────
 
 // ─── SAFE MESSAGING HELPERS (MV3 Resilient) ─────────────────────────────────
 
@@ -507,7 +403,6 @@ async function ensureContentScriptInjected(tabId) {
       world: "ISOLATED",
       files: [
         "shared/constants.js",
-        "shared/environment.js",
         "shared/schema.js",
         "content/maps/dom-utils.js",
         "content/maps/selectors.js",
@@ -994,50 +889,7 @@ self.startDiscoverySession = startDiscoverySession;
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return;
 
-  // --- SI_CONNECT ---
-  if (message.type === "SI_CONNECT") {
-    const session = message.session || {};
-    const token = session.access_token || message.token || null;
-    const email = session.email || message.email || null;
-    const apiBase = message.apiBase || null;
-    setAuthData(token, email, apiBase).then(() => {
-      console.log("[SI][CONNECTION] Connected:", email, "via", apiBase);
-      sendResponse({ ok: true, connected: true, version: getExtensionVersion() });
-    });
-    return true;
-  }
 
-  // --- SI_DISCONNECT ---
-  if (message.type === "SI_DISCONNECT") {
-    clearAuth().then(() => {
-      console.log("[SI][CONNECTION] Disconnected");
-      sendResponse({ ok: true, connected: false });
-    });
-    return true;
-  }
-
-  // --- SI_GET_STATUS ---
-  if (message.type === "SI_GET_STATUS") {
-    getAuthData().then(({ token, email, apiBase }) => {
-      sendResponse({
-        ok: true,
-        connected: Boolean(token),
-        email,
-        apiBase,
-        version: getExtensionVersion(),
-      });
-    });
-    return true;
-  }
-
-  // --- SI_BATCH_IMPORT ---
-  if (message.type === "SI_BATCH_IMPORT") {
-    const leads = getExportableLeads();
-    sendBatchImportToBackend(leads).then((result) => {
-      sendResponse(result);
-    });
-    return true;
-  }
 
   // --- GET_DISCOVERY_STATE / GET_MAPS_STATE ---
   if (message.type === "GET_DISCOVERY_STATE" || message.type === "GET_MAPS_STATE") {

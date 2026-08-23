@@ -101,9 +101,9 @@ function packageExtension() {
   }
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  console.log(`📦 Packaging Sales Intel Maps Connector v${manifest.version}...`);
+  console.log(`📦 Packaging RAMOS Maps Connector v${manifest.version}...`);
 
-  // Collect files to package
+  // Collect standalone files to package
   const requiredFiles = [
     "manifest.json",
     "background.js",
@@ -113,9 +113,7 @@ function packageExtension() {
     "icon.png",
     "discovery.js",
     "shared/constants.js",
-    "shared/environment.js",
     "shared/schema.js",
-    "content/bridge.js",
     "content/maps/dom-utils.js",
     "content/maps/selectors.js",
     "content/maps/validators.js",
@@ -162,19 +160,19 @@ function packageExtension() {
 
   const zipBuffer = createZip(zipFiles);
 
-  const publicDir = path.join(rootDir, "public");
-  if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir, { recursive: true });
+  const distDir = path.join(rootDir, "dist");
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
   }
 
-  const versionedZipPath = path.join(publicDir, `sales-intel-maps-connector-v${manifest.version}.zip`);
-  const legacyZipPath = path.join(publicDir, "sales-intel-maps-connector.zip");
+  const versionedZipPath = path.join(distDir, `ramos-maps-connector-v${manifest.version}.zip`);
+  const standaloneZipPath = path.join(distDir, "ramos-maps-connector.zip");
 
   fs.writeFileSync(versionedZipPath, zipBuffer);
-  fs.writeFileSync(legacyZipPath, zipBuffer);
+  fs.writeFileSync(standaloneZipPath, zipBuffer);
 
-  console.log(`✅ Successfully packaged Chrome Extension to: ${versionedZipPath}`);
-  console.log(`✅ Legacy copy maintained at: ${legacyZipPath}`);
+  console.log(`✅ Successfully packaged RAMOS Chrome Extension to: ${versionedZipPath}`);
+  console.log(`✅ Copy maintained at: ${standaloneZipPath}`);
   console.log(`   Total packaged files: ${zipFiles.length}`);
   console.log(`   ZIP size: ${(zipBuffer.length / 1024).toFixed(1)} KB`);
 }

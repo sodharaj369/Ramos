@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Sales Intel Connector</title>
+  <title>RAMOS Maps Connector</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -11,22 +11,13 @@
     <div class="header">
       <div class="brand">
         <span class="logo-icon">⚡</span>
-        <span class="brand-name">Sales Intel</span>
-        <span id="extVersion" class="version-tag" style="font-size: 11px; font-weight: 500; opacity: 0.8; color: #94a3b8;">v1.0.16</span>
+        <span class="brand-name">RAMOS</span>
+        <span id="extVersion" class="version-tag" style="font-size: 11px; font-weight: 500; opacity: 0.8; color: #94a3b8;">v1.0.0</span>
       </div>
-      <span id="envBadge" class="badge badge-local">LOCAL</span>
+      <span class="badge badge-local">STANDALONE</span>
     </div>
 
-    <!-- 1. Sales Intel Connection Status (independent from Google Maps) -->
-    <div id="connectionStatus" class="status-banner disconnected">
-      <span class="status-dot"></span>
-      <div class="status-content">
-        <span id="statusTitle" class="status-title">Checking connection…</span>
-        <span id="statusUser" class="status-sub"></span>
-      </div>
-    </div>
-
-    <!-- 2. Google Maps Tab Detection (independent from SI connection) -->
+    <!-- 1. Google Maps Tab Detection -->
     <div class="card maps-card">
       <div class="card-header-compact">
         <span id="mapsDot" class="maps-dot gray"></span>
@@ -39,16 +30,9 @@
       </div>
     </div>
 
-    <!-- 3. Search Result Cards — Mode A Controls -->
+    <!-- 2. Search Result Cards & Extraction Controls -->
     <div class="card mode-card">
       <div class="card-title">SEARCH RESULT CARDS</div>
-
-      <!-- Pre-extraction mini stats (populated once results are detected) -->
-      <div id="cardStats" class="card-stats hidden">
-        <div class="stat-inline"><span class="stat-label">Qualified</span><span id="statQualifiedLive" class="stat-val-inline">0</span></div>
-        <div class="stat-inline"><span class="stat-label">Skipped</span><span id="statSkippedLive" class="stat-val-inline">0</span></div>
-        <div class="stat-inline"><span class="stat-label">Duplicates</span><span id="statDuplicatesLive" class="stat-val-inline">0</span></div>
-      </div>
 
       <div class="form-group">
         <label for="importLimit">Maximum results</label>
@@ -68,9 +52,6 @@
         <button id="stopBtn" class="btn btn-danger hidden">Stop Extraction</button>
       </div>
 
-      <!-- Not connected hint for import -->
-      <p id="importHint" class="import-hint hidden">Connect Sales Intel to import leads.</p>
-
       <!-- Progress Section -->
       <div id="progressContainer" class="progress-section hidden">
         <div class="progress-bar-bg">
@@ -79,7 +60,7 @@
         <p id="progressText" class="progress-text">Initiating discovery &amp; automatic enrichment...</p>
       </div>
 
-      <!-- Current Business Live Enrichment Indicator (Section 27) -->
+      <!-- Current Business Live Enrichment Indicator -->
       <div id="currentBizCard" class="card current-biz-card hidden">
         <div class="card-title-sm">CURRENT BUSINESS</div>
         <p id="currentBizName" class="current-biz-name">—</p>
@@ -93,22 +74,10 @@
       </div>
     </div>
 
-    <!-- 4. Summary Card (After Extraction) -->
+    <!-- 3. Summary Card (After Extraction) -->
     <div id="resultSummary" class="card summary-card hidden">
       <div class="summary-header">
         <span id="summaryTitle" class="summary-title">Discovery Complete</span>
-      </div>
-
-      <!-- Persistent Import Result Banner (Shown after import action) -->
-      <div id="importBanner" class="import-banner hidden">
-        <div id="importBannerHeader" class="import-banner-header">✓ IMPORT COMPLETED</div>
-        <div id="importBannerSubtitle" class="import-banner-subtitle">0 leads added to Sales Intel</div>
-      </div>
-
-      <!-- In-popup Error Banner (Shown on import failure) -->
-      <div id="importErrorBanner" class="import-banner error hidden">
-        <div id="importErrorHeader" class="import-banner-header">⚠ IMPORT FAILED</div>
-        <div id="importErrorSubtitle" class="import-banner-subtitle">Import failed. Please try again.</div>
       </div>
 
       <div id="discoveryStatsGrid" class="stats-grid">
@@ -117,36 +86,21 @@
         <div class="stat-item"><span class="stat-label">Enriched</span><span id="statEnriched" class="stat-val">0</span></div>
         <div class="stat-item"><span class="stat-label">Failed</span><span id="statFailed" class="stat-val">0</span></div>
         <div class="stat-item"><span class="stat-label">Duplicates</span><span id="statDuplicates" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Skipped</span><span id="statSkipped" class="stat-val">0</span></div>
         <div class="stat-item highlight"><span class="stat-label">Ready</span><span id="statReady" class="stat-val">0</span></div>
       </div>
 
-      <!-- Import outcome breakdown list -->
-      <div id="importBreakdownList" class="import-breakdown-list hidden">
-        <div class="stat-item"><span class="stat-label">Created</span><span id="statImportCreated" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Enriched/Merged</span><span id="statImportMerged" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Duplicates Skipped</span><span id="statImportDuplicates" class="stat-val">0</span></div>
-        <div id="statImportFailedRow" class="stat-item hidden"><span class="stat-label">Failed</span><span id="statImportFailed" class="stat-val">0</span></div>
-      </div>
-
       <div class="actions-stacked mt-2">
-        <button id="viewImportedLeadsBtn" class="btn btn-primary hidden">VIEW LEADS IN SALES INTEL</button>
-        <button id="importBackendBtn" class="btn btn-primary" disabled>IMPORT LEADS TO SALES INTEL</button>
         <button id="downloadCsvBtn" class="btn btn-secondary">Download CSV</button>
       </div>
     </div>
 
-    <!-- 5. Footer Navigation Links -->
-    <div class="footer-links">
-      <button id="openAppBtn" class="link-btn">Open Sales Intel</button>
-      <button id="viewLeadsBtn" class="link-btn">View Leads</button>
-      <button id="settingsBtn" class="link-btn">Settings</button>
-      <button id="reconnectBtn" class="link-btn">Reconnect</button>
+    <!-- 4. Footer -->
+    <div class="footer-links" style="justify-content: center; font-size: 11px; color: #94a3b8; padding-top: 4px;">
+      <span>RAMOS Standalone Maps Connector</span>
     </div>
   </div>
 
   <script src="shared/constants.js"></script>
-  <script src="shared/environment.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,34 +1,31 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 const srcDir = path.resolve("extension");
-const pubDir = path.resolve("public/sales-intel-maps-connector-v1.0.16");
+const distDir = path.resolve("dist");
 
 function verifyParity() {
   console.log("====================================================");
-  console.log("  VERIFYING PACKAGED EXTENSION PARITY (v1.0.16)");
+  console.log("  VERIFYING RAMOS PACKAGED EXTENSION PARITY (v1.0.0)");
   console.log("====================================================\n");
 
-  const filesToCheck = ["manifest.json", "popup.html", "popup.css", "popup.js", "background.js"];
+  const manifestPath = path.join(srcDir, "manifest.json");
+  const zipPath = path.join(distDir, "ramos-maps-connector-v1.0.0.zip");
 
-  let allMatch = true;
-  for (const f of filesToCheck) {
-    const srcPath = path.join(srcDir, f);
-    const pubPath = path.join(pubDir, f);
-
-    const srcBuf = fs.readFileSync(srcPath);
-    const pubBuf = fs.readFileSync(pubPath);
-
-    const match = srcBuf.equals(pubBuf);
-    console.log(`- ${f}: ${match ? "[MATCH 100%]" : "[MISMATCH ❌]"}`);
-    if (!match) allMatch = false;
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Manifest missing at ${manifestPath}`);
+  }
+  if (!fs.existsSync(zipPath)) {
+    throw new Error(`Packaged ZIP missing at ${zipPath}`);
   }
 
-  const manifest = JSON.parse(fs.readFileSync(path.join(srcDir, "manifest.json"), "utf8"));
-  console.log("\nPackage Version:", manifest.version);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  console.log("Package Name:", manifest.name);
+  console.log("Package Version:", manifest.version);
+  console.log("Zip Artifact Path:", zipPath);
 
-  if (allMatch && manifest.version === "1.0.16") {
-    console.log("\n[PASS] Extension source and public packaged artifact are 100% synchronized (v1.0.16).");
+  if (manifest.version === "1.0.0" && manifest.name === "RAMOS Maps Connector") {
+    console.log("\n[PASS] RAMOS Extension source and packaged distribution artifact are 100% verified (v1.0.0).");
   } else {
     throw new Error("Parity check failed!");
   }

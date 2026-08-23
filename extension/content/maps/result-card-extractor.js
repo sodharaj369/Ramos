@@ -25,7 +25,7 @@
       root.SalesIntelAddressParser
     );
   }
-})(typeof self !== "undefined" ? self : this, function (Constants, Schema, DomUtils, Selectors, Validators, AddressParser) {
+})(typeof self !== "undefined" ? self : typeof globalThis !== "undefined" ? globalThis : this, function (Constants, Schema, DomUtils, Selectors, Validators, AddressParser) {
   "use strict";
 
   const PHONE_RE = /(\+?\d[\d\-\s().]{6,}\d)/;
