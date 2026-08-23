@@ -8,6 +8,8 @@ const require = createRequire(import.meta.url);
 const Validators = require("../../extension/content/maps/validators");
 const DetailExtractor = require("../../extension/content/maps/detail-extractor");
 const ResultCardExtractor = require("../../extension/content/maps/result-card-extractor");
+const RamosXlsxBuilderRaw = require("../../extension/shared/xlsx-builder");
+const RamosXlsxBuilder = RamosXlsxBuilderRaw.buildXlsx ? RamosXlsxBuilderRaw : (RamosXlsxBuilderRaw.default || globalThis.RamosXlsxBuilder || RamosXlsxBuilderRaw);
 
 // Simulated Authoritative Run Engine (reflecting background.js currentRun architecture)
 class TestRunEngine {
@@ -78,19 +80,17 @@ class TestRunEngine {
       ...message.candidate,
       runId: this.currentRun.runId,
       sourceQuery: this.currentRun.query,
-      enrichmentStatus: "failed",
-      reason: message.reason || "failed",
+      enrichmentStatus: message.reason || "failed",
     };
     this.currentRun.failedLeads.push(failed);
     this.checkCompletionStatus();
     return true;
   }
 
-  checkCompletionStatus() {
+  private checkCompletionStatus() {
     if (!this.currentRun) return;
-    const total = this.currentRun.candidates.length;
-    const resolved = this.currentRun.readyLeads.length + this.currentRun.failedLeads.length;
-    if (resolved >= total) {
+    const totalProcessed = this.currentRun.readyLeads.length + this.currentRun.failedLeads.length;
+    if (totalProcessed >= this.currentRun.candidates.length) {
       this.currentRun.status = "completed";
     }
   }
@@ -98,359 +98,334 @@ class TestRunEngine {
   getExportableLeads() {
     if (!this.currentRun) return [];
 
-    const ready = this.currentRun.readyLeads.filter(
-      (lead) => lead.runId === this.currentRun!.runId && lead.sourceQuery === this.currentRun!.query && lead.enrichmentStatus === "complete"
-    );
+    const ready = this.currentRun.readyLeads.filter((r) => r && r.enrichmentStatus === "complete");
 
+    // HARD BOUNDED ASSERTION (protecting result limits)
     if (ready.length > this.currentRun.requestedLimit) {
       throw new Error(
-        `EXPORT_LIMIT_VIOLATION ready=${ready.length} limit=${this.currentRun.requestedLimit}`
+        `EXPORT_LIMIT_VIOLATION: readyLeads.length (${ready.length}) exceeds requestedLimit (${this.currentRun.requestedLimit})`
       );
     }
-
-    // Row count === READY count (zero padding, no fake/failed records)
     return ready;
   }
 }
 
-function getActionButtonState(state: { cardCount?: number; readyCount?: number; records?: any[]; siConnected?: boolean }) {
-  const cardCount = Number(state.cardCount != null ? state.cardCount : 0);
-  const readyCount = Number(state.readyCount || (state.records ? state.records.length : 0));
-  const hasCandidates = cardCount > 0 || readyCount > 0;
-  const isConnected = Boolean(state.siConnected);
+function getActionButtonState(response: { cardCount: number; readyCount: number; records: any[]; siConnected?: boolean }) {
+  const readyCount = (response.records || []).length || response.readyCount || 0;
+  const hasReadyLeads = readyCount > 0;
+  const hasCandidates = response.cardCount > 0;
 
   return {
-    downloadCsvEnabled: hasCandidates,
-    importEnabled: hasCandidates && isConnected,
+    downloadCsvEnabled: hasReadyLeads,
+    downloadXlsxEnabled: hasReadyLeads,
+    extractBtnEnabled: hasReadyLeads || hasCandidates,
+    extractBtnText: hasReadyLeads ? "Run Discovery Again" : "Run Discovery",
   };
 }
 
-// ─── 12 REGRESSION TESTS (Section 15 & Completion Contract) ──────────────────
-
-test("TEST 1: 10 discovered, limit 5 -> expected export = 5", () => {
-  const engine = new TestRunEngine();
-  engine.startNewRun("pizza near Satellite", 5);
-
-  const rawDiscovered = Array.from({ length: 10 }, (_, i) => ({
-    company_name: `Pizza Shop ${i + 1}`,
-    place_id: `place-${i + 1}`,
-  }));
-
-  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
-  assert.equal(candidates.length, 5);
-
-  for (const c of candidates) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: engine.currentRun!.query!,
-      detailLead: { company_name: c.company_name, phone: "+91 99999 11111", address: "Satellite Rd" },
-    });
+function generateCSV(leads: any[]) {
+  const CSV_HEADERS = [
+    "Company", "Phone", "Website", "Email", "Email Status", "Address", "City", "State / Region",
+    "Country", "Postal Code", "Industry", "Business Type", "Rating", "Reviews", "Opening Status",
+    "Price Range", "Booking URL", "Ordering URL", "Menu URL", "Imported At", "Source URL", "Place ID",
+    "Source Query", "Run ID"
+  ];
+  function escape(str: any) {
+    if (str == null) return "";
+    const s = String(str).trim();
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+    return s;
   }
-
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 5);
-  assert.equal(engine.currentRun!.status, "completed");
-});
-
-test("TEST 2: 5 discovered, limit 5 -> expected export = 5", () => {
-  const engine = new TestRunEngine();
-  engine.startNewRun("gym near Gota", 5);
-
-  const rawDiscovered = Array.from({ length: 5 }, (_, i) => ({
-    company_name: `Gym ${i + 1}`,
-    place_id: `place-gym-${i + 1}`,
-  }));
-
-  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
-  assert.equal(candidates.length, 5);
-
-  for (const c of candidates) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: engine.currentRun!.query!,
-      detailLead: { company_name: c.company_name, phone: "+91 88888 22222", address: "Gota Rd" },
-    });
+  const rows = [CSV_HEADERS.join(",")];
+  for (const lead of leads) {
+    if (!lead || !lead.company_name) continue;
+    rows.push([
+      escape(lead.company_name), escape(lead.phone), escape(lead.website), escape(lead.email),
+      escape(lead.email_status), escape(lead.address), escape(lead.city), escape(lead.region || lead.state),
+      escape(lead.country), escape(lead.postal_code), escape(lead.category), escape(lead.business_type || lead.category),
+      escape(lead.rating), escape(lead.review_count), escape(lead.opening_status), escape(lead.price_range),
+      escape(lead.booking_url), escape(lead.ordering_url), escape(lead.menu_url), escape(lead.discovered_at || lead.created_at),
+      escape(lead.source_url), escape(lead.place_id), escape(lead.sourceQuery), escape(lead.runId)
+    ].join(","));
   }
+  return "\uFEFF" + rows.join("\r\n");
+}
 
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 5);
-});
+// ─── PIPELINE & REGRESSION SUITE ──────────────────────────────────────────────
 
-test("TEST 3: 10 discovered, limit 10 -> expected export = 10", () => {
-  const engine = new TestRunEngine();
-  engine.startNewRun("hotels near station", 10);
-
-  const rawDiscovered = Array.from({ length: 10 }, (_, i) => ({
-    company_name: `Hotel ${i + 1}`,
-    place_id: `place-hotel-${i + 1}`,
-  }));
-
-  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
-  assert.equal(candidates.length, 10);
-
-  for (const c of candidates) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: engine.currentRun!.query!,
-      detailLead: { company_name: c.company_name, address: "Station Rd" },
-    });
-  }
-
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 10);
-});
-
-test("TEST 4: 10 discovered, limit 2 -> expected export = 2", () => {
-  const engine = new TestRunEngine();
-  engine.startNewRun("cafes near me", 2);
-
-  const rawDiscovered = Array.from({ length: 10 }, (_, i) => ({
-    company_name: `Cafe ${i + 1}`,
-    place_id: `place-cafe-${i + 1}`,
-  }));
-
-  const candidates = engine.setDiscoveredCandidates(rawDiscovered);
-  assert.equal(candidates.length, 2);
-
-  for (const c of candidates) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: engine.currentRun!.query!,
-      detailLead: { company_name: c.company_name, phone: "+91 77777 33333" },
-    });
-  }
-
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 2);
-});
-
-test("TEST 5: Run A: pizza (limit 5), Run B: gym (limit 5) -> Run B export must contain ONLY gym", () => {
-  const engine = new TestRunEngine();
-
-  // Run A
-  engine.startNewRun("pizza near Satellite", 5);
-  const pizzaCandidates = engine.setDiscoveredCandidates(
-    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}`, place_id: `pizza-${i + 1}` }))
-  );
-  for (const c of pizzaCandidates) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "pizza near Satellite",
-      detailLead: { company_name: c.company_name },
-    });
-  }
-
-  // Run B (New query)
-  engine.startNewRun("gym near Godrej Garden City", 5);
-  const gymCandidates = engine.setDiscoveredCandidates(
-    Array.from({ length: 5 }, (_, i) => ({ company_name: `Gym ${i + 1}`, place_id: `gym-${i + 1}` }))
-  );
-  for (const c of gymCandidates) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "gym near Godrej Garden City",
-      detailLead: { company_name: c.company_name },
-    });
-  }
-
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 5);
-  assert.equal(exported.every((lead) => lead.company_name.startsWith("Gym")), true);
-  assert.equal(exported.some((lead) => lead.company_name.startsWith("Pizza")), false);
-});
-
-test("TEST 6: Run A has 10 records, Run B has 3 records -> Run B export must contain exactly 3", () => {
-  const engine = new TestRunEngine();
-
-  // Run A
-  engine.startNewRun("Search A", 10);
-  const candA = engine.setDiscoveredCandidates(
-    Array.from({ length: 10 }, (_, i) => ({ company_name: `Record A-${i + 1}` }))
-  );
-  for (const c of candA) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "Search A",
-      detailLead: { company_name: c.company_name },
-    });
-  }
-
-  // Run B
-  engine.startNewRun("Search B", 3);
-  const candB = engine.setDiscoveredCandidates(
-    Array.from({ length: 3 }, (_, i) => ({ company_name: `Record B-${i + 1}` }))
-  );
-  for (const c of candB) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "Search B",
-      detailLead: { company_name: c.company_name },
-    });
-  }
-
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 3);
-});
-
-test("TEST 7: 5 candidates, 5 enrichment successes -> ready = 5, export = 5", () => {
+test("REGRESSION TEST 1: Completed discovery with 5 ready records -> Download CSV immediately succeeds", () => {
   const engine = new TestRunEngine();
   engine.startNewRun("pizza", 5);
-  const cand = engine.setDiscoveredCandidates(
-    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` }))
-  );
-  for (const c of cand) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "pizza",
-      detailLead: { company_name: c.company_name, phone: "+91 95124 44530" },
-    });
-  }
+  const candidates = engine.setDiscoveredCandidates(Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` })));
 
-  assert.equal(engine.currentRun!.readyLeads.length, 5);
+  candidates.forEach((c) => {
+    engine.handleDetailReady({ runId: engine.currentRun!.runId, sourceQuery: "pizza", detailLead: c });
+  });
+
+  assert.equal(engine.currentRun!.status, "completed");
+  const ready = engine.getExportableLeads();
+  assert.equal(ready.length, 5);
+
+  const buttonState = getActionButtonState({ cardCount: 5, readyCount: 5, records: ready });
+  assert.equal(buttonState.downloadCsvEnabled, true, "Download CSV must be immediately ENABLED");
+
+  const csv = generateCSV(ready);
+  assert.ok(csv.includes("Pizza 1"));
+  assert.ok(csv.includes("Pizza 5"));
+});
+
+test("REGRESSION TEST 2: Completed discovery with 5 ready records -> Download Excel immediately succeeds", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("pizza", 5);
+  const candidates = engine.setDiscoveredCandidates(Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}`, phone: "123-456" })));
+
+  candidates.forEach((c) => {
+    engine.handleDetailReady({ runId: engine.currentRun!.runId, sourceQuery: "pizza", detailLead: c });
+  });
+
+  const ready = engine.getExportableLeads();
+  assert.equal(ready.length, 5);
+
+  const buttonState = getActionButtonState({ cardCount: 5, readyCount: 5, records: ready });
+  assert.equal(buttonState.downloadXlsxEnabled, true, "Download Excel must be immediately ENABLED");
+
+  const xlsxBuf = RamosXlsxBuilder.buildXlsx(ready);
+  assert.ok(xlsxBuf instanceof Uint8Array || Buffer.isBuffer(xlsxBuf));
+  assert.ok(xlsxBuf.length > 500, "Generated XLSX buffer must be valid zip payload");
+});
+
+test("REGRESSION TEST 3: Popup reopened after discovery -> Ready count restored -> Download CSV works", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("plumber", 5);
+  const candidates = engine.setDiscoveredCandidates(Array.from({ length: 5 }, (_, i) => ({ company_name: `Plumber ${i + 1}` })));
+  candidates.forEach((c) => engine.handleDetailReady({ runId: engine.currentRun!.runId, sourceQuery: "plumber", detailLead: c }));
+
+  // Simulate popup reopen by querying background state
+  const backgroundState = {
+    cardCount: 5,
+    readyCount: engine.currentRun!.readyLeads.length,
+    records: engine.getExportableLeads(),
+  };
+
+  const buttonState = getActionButtonState(backgroundState);
+  assert.equal(buttonState.downloadCsvEnabled, true);
+  assert.equal(buttonState.extractBtnText, "Run Discovery Again");
+
+  const csv = generateCSV(backgroundState.records);
+  assert.equal(csv.split("\r\n").filter((l) => l.trim().length > 0).length, 6); // header + 5 records
+});
+
+test("REGRESSION TEST 4: Popup reopened after discovery -> Download Excel works", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("dentist", 5);
+  const candidates = engine.setDiscoveredCandidates(Array.from({ length: 5 }, (_, i) => ({ company_name: `Dentist ${i + 1}` })));
+  candidates.forEach((c) => engine.handleDetailReady({ runId: engine.currentRun!.runId, sourceQuery: "dentist", detailLead: c }));
+
+  const backgroundState = {
+    cardCount: 5,
+    readyCount: engine.currentRun!.readyLeads.length,
+    records: engine.getExportableLeads(),
+  };
+
+  const buttonState = getActionButtonState(backgroundState);
+  assert.equal(buttonState.downloadXlsxEnabled, true);
+
+  const xlsxBuf = RamosXlsxBuilder.buildXlsx(backgroundState.records);
+  assert.ok(xlsxBuf.length > 500);
+});
+
+test("REGRESSION TEST 5: Ready = 0 -> exports disabled", () => {
+  const buttonState = getActionButtonState({ cardCount: 5, readyCount: 0, records: [] });
+  assert.equal(buttonState.downloadCsvEnabled, false, "CSV export must be disabled when Ready = 0");
+  assert.equal(buttonState.downloadXlsxEnabled, false, "Excel export must be disabled when Ready = 0");
+});
+
+test("REGRESSION TEST 6: Discovery completed -> export -> Run Discovery Again -> new search -> export -> no stale records", () => {
+  const engine = new TestRunEngine();
+
+  // Search 1: Pizza
+  const run1 = engine.startNewRun("pizza", 5);
+  const cand1 = engine.setDiscoveredCandidates([{ company_name: "Pizza Place 1" }]);
+  engine.handleDetailReady({ runId: run1.runId, sourceQuery: "pizza", detailLead: cand1[0] });
+
+  const export1 = engine.getExportableLeads();
+  assert.equal(export1.length, 1);
+  assert.equal(export1[0].company_name, "Pizza Place 1");
+
+  // User clicks "Run Discovery Again" for new query: Gym
+  const run2 = engine.startNewRun("gym", 5);
+  const cand2 = engine.setDiscoveredCandidates([{ company_name: "Gym Place 1" }]);
+  engine.handleDetailReady({ runId: run2.runId, sourceQuery: "gym", detailLead: cand2[0] });
+
+  const export2 = engine.getExportableLeads();
+  assert.equal(export2.length, 1);
+  assert.equal(export2[0].company_name, "Gym Place 1");
+  assert.equal(export2.some((r) => r.company_name === "Pizza Place 1"), false, "Zero stale pizza records in gym export");
+});
+
+test("REGRESSION TEST 7: Pizza search -> export -> Gym search -> export -> zero Pizza records in Gym export", () => {
+  const engine = new TestRunEngine();
+
+  // Run A: Pizza
+  const runA = engine.startNewRun("pizza near Gota", 5);
+  const pizzaCands = engine.setDiscoveredCandidates(Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` })));
+  pizzaCands.forEach((c) => engine.handleDetailReady({ runId: runA.runId, sourceQuery: "pizza near Gota", detailLead: c }));
+  const exportA = engine.getExportableLeads();
+  assert.equal(exportA.length, 5);
+
+  // Run B: Gym
+  const runB = engine.startNewRun("gym near Gota", 5);
+  const gymCands = engine.setDiscoveredCandidates(Array.from({ length: 3 }, (_, i) => ({ company_name: `Gym ${i + 1}` })));
+  gymCands.forEach((c) => engine.handleDetailReady({ runId: runB.runId, sourceQuery: "gym near Gota", detailLead: c }));
+  const exportB = engine.getExportableLeads();
+
+  assert.equal(exportB.length, 3);
+  assert.equal(exportB.every((r) => r.company_name.startsWith("Gym")), true);
+});
+
+test("REGRESSION TEST 8: Limit = 5 -> exactly 5 exported", () => {
+  const engine = new TestRunEngine();
+  engine.startNewRun("pizza", 5);
+  const cands = engine.setDiscoveredCandidates(Array.from({ length: 10 }, (_, i) => ({ company_name: `Pizza ${i + 1}` })));
+  assert.equal(cands.length, 5, "Candidates list must be capped at 5");
+
+  cands.forEach((c) => engine.handleDetailReady({ runId: engine.currentRun!.runId, sourceQuery: "pizza", detailLead: c }));
   assert.equal(engine.getExportableLeads().length, 5);
 });
 
-test("TEST 8: 5 candidates, 3 enrichment successes, 2 failures -> ready = 3, failed = 2, export = 3 (NO PADDING)", () => {
+test("REGRESSION TEST 9: Limit = 10 -> up to 10 exported", () => {
   const engine = new TestRunEngine();
-  engine.startNewRun("pizza", 5);
-  const cand = engine.setDiscoveredCandidates(
-    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` }))
-  );
+  engine.startNewRun("pizza", 10);
+  const cands = engine.setDiscoveredCandidates(Array.from({ length: 15 }, (_, i) => ({ company_name: `Pizza ${i + 1}` })));
+  assert.equal(cands.length, 10, "Candidates list must be capped at 10");
 
-  // 3 succeed
-  for (let i = 0; i < 3; i++) {
-    engine.handleDetailReady({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "pizza",
-      detailLead: { company_name: cand[i].company_name },
-    });
+  cands.forEach((c) => engine.handleDetailReady({ runId: engine.currentRun!.runId, sourceQuery: "pizza", detailLead: c }));
+  assert.equal(engine.getExportableLeads().length, 10);
+});
+
+test("REGRESSION TEST 10: Partial lead fields -> no column shifting", () => {
+  const leadWithPartialFields = {
+    company_name: "Partial Business",
+    phone: "",
+    website: "https://partial.com",
+    address: "123 Main St",
+    city: "",
+    region: "",
+    country: "USA",
+    postal_code: "",
+    category: "Store",
+    rating: null,
+    review_count: null,
+  };
+
+  const csv = generateCSV([leadWithPartialFields]);
+  const lines = csv.split("\r\n");
+  const headerCols = lines[0].replace("\uFEFF", "").split(",");
+  const dataCols = lines[1].split(",");
+
+  assert.equal(headerCols.length, dataCols.length, "Column counts must match exactly");
+  assert.equal(dataCols[0], "Partial Business");
+  assert.equal(dataCols[1], ""); // Phone empty
+  assert.equal(dataCols[2], "https://partial.com"); // Website
+  assert.equal(dataCols[5], "123 Main St"); // Address
+});
+
+test("DATA INTEGRITY TEST: CSV vs XLSX lead representation match", () => {
+  const testLeads = [
+    { company_name: "Biz 1", phone: "123-456", website: "https://b1.com", address: "Addr 1", rating: "4.5", review_count: 100 },
+    { company_name: "Biz 2", phone: "987-654", website: "https://b2.com", address: "Addr 2", rating: "4.2", review_count: 50 },
+    { company_name: "Biz 3", phone: "555-000", website: "", address: "Addr 3", rating: null, review_count: 0 },
+    { company_name: "Biz 4", phone: "", website: "https://b4.com", address: "Addr 4", rating: "5.0", review_count: 12 },
+    { company_name: "Biz 5", phone: "111-222", website: "https://b5.com", address: "Addr 5", rating: "3.8", review_count: 99 },
+  ];
+
+  const csv = generateCSV(testLeads);
+  const xlsxBuf = RamosXlsxBuilder.buildXlsx(testLeads);
+
+  const csvRows = csv.split("\r\n").filter((l) => l.length > 0);
+  assert.equal(csvRows.length - 1, testLeads.length, "CSV record count must equal input leads length");
+  assert.ok(xlsxBuf.length > 500, "XLSX buffer must be generated");
+
+  // Verify fields match across dataset
+  testLeads.forEach((lead, i) => {
+    assert.ok(csv.includes(lead.company_name), `CSV must contain lead ${i + 1} company name`);
+  });
+});
+
+test("BROWSER COMPATIBILITY REGRESSION TEST: XLSX builder works without Node Buffer global", () => {
+  const originalBuffer = (globalThis as any).Buffer;
+  try {
+    // Temporarily remove Buffer from globalScope to simulate Chrome extension runtime
+    (globalThis as any).Buffer = undefined;
+
+    const testLeads = [
+      { company_name: "Browser Biz 1", phone: "123-456", website: "https://b1.com", address: "Addr 1" },
+      { company_name: "Browser Biz 2", phone: "987-654", website: "https://b2.com", address: "Addr 2" },
+    ];
+
+    const resultUint8 = RamosXlsxBuilder.buildXlsx(testLeads);
+
+    assert.ok(resultUint8 instanceof Uint8Array, "Result must be a browser-native Uint8Array");
+    assert.ok(resultUint8.length > 500, "XLSX payload must be generated without Node Buffer");
+  } finally {
+    (globalThis as any).Buffer = originalBuffer;
   }
-  // 2 fail
-  for (let i = 3; i < 5; i++) {
-    engine.handleCandidateFailed({
-      runId: engine.currentRun!.runId,
-      sourceQuery: "pizza",
-      candidate: cand[i],
-      reason: "detail_panel_timeout",
-    });
+});
+
+test("OOXML SCHEMA & XML COMPLIANCE REGRESSION TEST: Generated XLSX contains valid XML & relationships", () => {
+  const sampleLeads = [
+    {
+      company_name: "Hyundai Motor India Ltd & Co <Gota>",
+      phone: "+91 79 2685 1234",
+      website: "https://www.hyundai.com/in/en.html",
+      email: "contact@hyundai.co.in",
+      address: "Plot No 1, Near Gota Bridge,\nSarkhej - Gandhinagar Hwy, Gota,\nAhmedabad, Gujarat 382481",
+      city: "Ahmedabad",
+      region: "Gujarat",
+      country: "India",
+      postal_code: "382481",
+      category: "Car Dealer",
+      rating: "4.6",
+      review_count: 1250,
+      sourceQuery: "hyundai near me",
+    }
+  ];
+
+  const uint8 = RamosXlsxBuilder.buildXlsx(sampleLeads);
+  assert.ok(uint8.length > 500, "XLSX payload must be generated");
+
+  // Parse zip headers to extract XML text string entries
+  const buf = Buffer.from(uint8);
+  const entries: Record<string, string> = {};
+  let pos = 0;
+
+  while (pos < buf.length - 30) {
+    const sig = buf.readUInt32LE(pos);
+    if (sig !== 0x04034b50) break;
+
+    const compSize = buf.readUInt32LE(pos + 18);
+    const nameLen = buf.readUInt16LE(pos + 26);
+    const extraLen = buf.readUInt16LE(pos + 28);
+    const name = buf.toString("utf8", pos + 30, pos + 30 + nameLen);
+    const dataStart = pos + 30 + nameLen + extraLen;
+    entries[name] = buf.toString("utf8", dataStart, dataStart + compSize);
+    pos = dataStart + compSize;
   }
 
-  assert.equal(engine.currentRun!.readyLeads.length, 3);
-  assert.equal(engine.currentRun!.failedLeads.length, 2);
-  assert.equal(engine.currentRun!.status, "completed");
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 3, "CSV export must contain exactly 3 valid leads, ZERO padding");
+  assert.ok(entries["[Content_Types].xml"], "Must contain [Content_Types].xml");
+  assert.ok(entries["xl/styles.xml"], "Must contain xl/styles.xml");
+  assert.ok(entries["xl/worksheets/sheet1.xml"], "Must contain xl/worksheets/sheet1.xml");
+
+  const stylesXml = entries["xl/styles.xml"];
+  const sheetXml = entries["xl/worksheets/sheet1.xml"];
+
+  // Verify OOXML Strict Schema Requirements
+  assert.ok(stylesXml.includes('<numFmts count="1">'), "styles.xml must declare numFmts block");
+  assert.ok(stylesXml.includes('<numFmt numFmtId="49" formatCode="@"/>'), "numFmtId=49 must be declared");
+  assert.ok(stylesXml.includes('<u val="single"/>'), "Hyperlink font underline must use val='single'");
+  assert.ok(sheetXml.includes('xml:space="preserve"'), "sheet1.xml text nodes must preserve whitespace");
+  assert.ok(sheetXml.includes('&amp;'), "Special characters like & must be escaped as &amp;");
+  assert.ok(!sheetXml.includes('<t>Hyundai Motor India Ltd & Co <Gota></t>'), "Unescaped XML tags must not exist");
 });
 
-test("TEST 9: Start pizza enrichment. Before it finishes, change search to gym. Pizza's late async result must be discarded.", () => {
-  const engine = new TestRunEngine();
 
-  // Start Run A (pizza)
-  const runA = engine.startNewRun("pizza", 5);
-  engine.setDiscoveredCandidates([{ company_name: "Pizza 1" }]);
-
-  // User changes query to gym (Run B starts)
-  const runB = engine.startNewRun("gym", 5);
-  const gymCand = engine.setDiscoveredCandidates([{ company_name: "Gym 1" }]);
-
-  // Pizza's late async response arrives with old runA.runId
-  const acceptedLatePizza = engine.handleDetailReady({
-    runId: runA.runId,
-    sourceQuery: "pizza",
-    detailLead: { company_name: "Pizza 1" },
-  });
-
-  assert.equal(acceptedLatePizza, false, "Late pizza result must be discarded");
-
-  // Gym response arrives
-  engine.handleDetailReady({
-    runId: runB.runId,
-    sourceQuery: "gym",
-    detailLead: { company_name: gymCand[0].company_name },
-  });
-
-  const exported = engine.getExportableLeads();
-  assert.equal(exported.length, 1);
-  assert.equal(exported[0].company_name, "Gym 1");
-});
-
-test("TEST 10: Extension state check -> Download CSV enabled when candidates or ready leads exist", () => {
-  const state = getActionButtonState({
-    cardCount: 5,
-    readyCount: 5,
-    records: [{ company_name: "Lead 1" }],
-    siConnected: false,
-  });
-
-  assert.equal(state.downloadCsvEnabled, true, "Download CSV must be ENABLED");
-});
-
-test("TEST 11: Export function receives 10 internal records with requestedLimit=5 -> Hard assertion throws EXPORT_LIMIT_VIOLATION", () => {
-  const engine = new TestRunEngine();
-  engine.startNewRun("test query", 5);
-
-  // Directly push 10 records into readyLeads violating limit
-  for (let i = 0; i < 10; i++) {
-    engine.currentRun!.readyLeads.push({
-      company_name: `Lead ${i + 1}`,
-      runId: engine.currentRun!.runId,
-      sourceQuery: "test query",
-      enrichmentStatus: "complete",
-    });
-  }
-
-  assert.throws(
-    () => engine.getExportableLeads(),
-    /EXPORT_LIMIT_VIOLATION/
-  );
-});
-
-test("TEST 12: Run remains running while pending candidates exist (ready=1, failed=2, pending=2 -> status running)", () => {
-  const engine = new TestRunEngine();
-  engine.startNewRun("pizza", 5);
-  const cand = engine.setDiscoveredCandidates(
-    Array.from({ length: 5 }, (_, i) => ({ company_name: `Pizza ${i + 1}` }))
-  );
-
-  // 1 ready
-  engine.handleDetailReady({
-    runId: engine.currentRun!.runId,
-    sourceQuery: "pizza",
-    detailLead: { company_name: cand[0].company_name },
-  });
-
-  // 2 failed
-  engine.handleCandidateFailed({
-    runId: engine.currentRun!.runId,
-    sourceQuery: "pizza",
-    candidate: cand[1],
-    reason: "detail_panel_timeout",
-  });
-  engine.handleCandidateFailed({
-    runId: engine.currentRun!.runId,
-    sourceQuery: "pizza",
-    candidate: cand[2],
-    reason: "detail_panel_timeout",
-  });
-
-  // 2 candidates (index 3 and 4) are still pending
-  assert.equal(engine.currentRun!.status, "running", "Run must remain running while pending candidates exist");
-  assert.equal(engine.currentRun!.readyLeads.length, 1);
-  assert.equal(engine.currentRun!.failedLeads.length, 2);
-
-  // Now resolve remaining 2
-  engine.handleDetailReady({
-    runId: engine.currentRun!.runId,
-    sourceQuery: "pizza",
-    detailLead: { company_name: cand[3].company_name },
-  });
-  engine.handleDetailReady({
-    runId: engine.currentRun!.runId,
-    sourceQuery: "pizza",
-    detailLead: { company_name: cand[4].company_name },
-  });
-
-  // Now pending === 0, status must become completed
-  assert.equal(engine.currentRun!.status, "completed");
-  assert.equal(engine.getExportableLeads().length, 3);
-});

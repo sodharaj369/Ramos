@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "RAMOS – Maps Lead Extractor",
   "short_name": "RAMOS",
-  "version": "1.0.1",
-  "description": "Extract business details from Google Maps and export clean leads to CSV.",
+  "version": "1.0.5",
+  "description": "Extract business details from Google Maps and export clean leads to CSV or Excel.",
   "permissions": ["storage", "tabs", "scripting", "downloads"],
   "host_permissions": [
     "https://www.google.com/maps*",
@@ -37,6 +37,7 @@
       "js": [
         "shared/constants.js",
         "shared/schema.js",
+        "shared/xlsx-builder.js",
         "content/maps/dom-utils.js",
         "content/maps/selectors.js",
         "content/maps/validators.js",
@@ -55,6 +56,7 @@
         "popup.html",
         "popup.js",
         "popup.css",
+        "shared/xlsx-builder.js",
         "assets/ramos-icon-16.png",
         "assets/ramos-icon-32.png",
         "assets/ramos-icon-48.png",

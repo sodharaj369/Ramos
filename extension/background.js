@@ -1,14 +1,22 @@
 /**
- * Background Service Worker for RAMOS Chrome Extension (v1.0.1)
+ * Background Service Worker for RAMOS Chrome Extension (v1.0.5)
  * Manifest V3 Safe Messaging Architecture with Resilient Content-Script Reconnection.
  * Single Authority for Discovery Session & Run State Isolation.
  */
+
+try {
+  if (typeof importScripts === "function") {
+    importScripts("shared/xlsx-builder.js");
+  }
+} catch (e) {
+  // Ignored in non-worker environments
+}
 
 const getExtensionVersion = () => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return "1.0.1";
+    return "1.0.5";
   }
 };
 
@@ -255,8 +263,8 @@ function createCsv(leads) {
   return "\uFEFF" + rows.join("\r\n");
 }
 
-function executeExportDownload(customSendResponse) {
-  console.log(`[SI][EXPORT_FLOW][CLICK] runId=${currentRun.runId} status=${currentRun.status}`);
+function executeExportDownload(customSendResponse, format = "csv") {
+  console.log(`[SI][EXPORT_FLOW][CLICK] runId=${currentRun.runId} status=${currentRun.status} format=${format}`);
 
   if (currentRun.exportInProgress) {
     console.warn(`[SI][EXPORT_FLOW][CLICK] ignored: export in progress`);
@@ -292,22 +300,59 @@ function executeExportDownload(customSendResponse) {
   if (leads.length === 0) {
     console.warn(`[SI][EXPORT_FLOW][CLICK] no exportable leads found`);
     if (typeof customSendResponse === "function") {
-      customSendResponse({ ok: false, reason: "NO_LEADS", error: "No completed leads available to export for this run." });
+      customSendResponse({ ok: false, reason: "NO_LEADS", error: "No completed leads are available to export yet." });
     }
     return;
   }
 
   currentRun.exportInProgress = true;
-  const csv = createCsv(leads);
-  console.log(`[SI][EXPORT_FLOW][CSV_CREATED] runId=${exportRunId} bytes=${csv.length}`);
-
   const sanitize = (q) => (q || "google-maps").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const filename = `ramos-${sanitize(sourceQuery)}-${dateStr}.csv`;
+  const exportFormat = String(format).toLowerCase() === "xlsx" || String(format).toLowerCase() === "excel" ? "xlsx" : "csv";
+  const filename = `ramos-${sanitize(sourceQuery)}-${dateStr}.${exportFormat}`;
 
-  console.log(`[SI][EXPORT_FLOW][DOWNLOAD_REQUEST] filename="${filename}"`);
+  let dataUrl = "";
+  if (exportFormat === "xlsx") {
+    const xlsxBuilder =
+      typeof RamosXlsxBuilder !== "undefined"
+        ? RamosXlsxBuilder
+        : typeof require === "function"
+        ? require("./shared/xlsx-builder")
+        : null;
 
-  const dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+    if (!xlsxBuilder || typeof xlsxBuilder.buildXlsx !== "function") {
+      currentRun.exportInProgress = false;
+      const errMsg = "XLSX Builder unavailable";
+      console.error(`[SI][EXPORT_FLOW][ERROR] ${errMsg}`);
+      if (typeof customSendResponse === "function") {
+        customSendResponse({ ok: false, error: errMsg });
+      }
+      return;
+    }
+
+    try {
+      const uint8 = xlsxBuilder.buildXlsx(leads);
+      let binary = "";
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      const base64 = typeof btoa === "function" ? btoa(binary) : "";
+      dataUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${base64}`;
+    } catch (err) {
+      currentRun.exportInProgress = false;
+      const errMsg = err?.message || String(err);
+      console.error(`[SI][EXPORT_FLOW][XLSX_BUILD_ERROR] ${errMsg}`);
+      if (typeof customSendResponse === "function") {
+        customSendResponse({ ok: false, error: errMsg });
+      }
+      return;
+    }
+  } else {
+    const csv = createCsv(leads);
+    dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+  }
+
+  console.log(`[SI][EXPORT_FLOW][DOWNLOAD_REQUEST] filename="${filename}" format=${exportFormat}`);
 
   try {
     chrome.downloads.download(
@@ -341,9 +386,10 @@ function executeExportDownload(customSendResponse) {
             rowCount: leads.length,
             filename: filename,
             downloadId: downloadId,
+            format: exportFormat,
           });
           if (typeof customSendResponse === "function") {
-            customSendResponse({ ok: true, downloadId, filename, rowCount: leads.length });
+            customSendResponse({ ok: true, downloadId, filename, rowCount: leads.length, format: exportFormat });
           }
         }
       }
@@ -890,6 +936,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return;
 
 
+
+  // --- EXPORT DOWNLOAD HANDLERS ---
+  if (
+    message.type === "SI_TRIGGER_DOWNLOAD_CSV" ||
+    message.type === "SI_TRIGGER_DOWNLOAD_EXCEL" ||
+    message.type === "SI_TRIGGER_DOWNLOAD_XLSX" ||
+    message.type === "DOWNLOAD_CSV" ||
+    message.type === "DOWNLOAD_EXCEL"
+  ) {
+    const fmt = message.format || (message.type.includes("EXCEL") || message.type.includes("XLSX") ? "xlsx" : "csv");
+    executeExportDownload(sendResponse, fmt);
+    return true;
+  }
 
   // --- GET_DISCOVERY_STATE / GET_MAPS_STATE ---
   if (message.type === "GET_DISCOVERY_STATE" || message.type === "GET_MAPS_STATE") {

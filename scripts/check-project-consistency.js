@@ -28,6 +28,7 @@ const requiredDocs = [
   'docs/RAMOS_EXTRACTION_RULES.md',
   'docs/RAMOS_INTERNAL_AUDIT.md',
   'docs/RAMOS_BRAND_GUIDELINES.md',
+  'docs/RAMOS_EXPORT_SPECIFICATION.md',
   'docs/chrome-extension.md',
 ];
 

@@ -117,6 +117,7 @@ function packageExtension() {
     "discovery.js",
     "shared/constants.js",
     "shared/schema.js",
+    "shared/xlsx-builder.js",
     "content/maps/dom-utils.js",
     "content/maps/selectors.js",
     "content/maps/validators.js",

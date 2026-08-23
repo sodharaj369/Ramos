@@ -1,4 +1,4 @@
-# RAMOS – Maps Lead Extractor (v1.0.1)
+# RAMOS – Maps Lead Extractor (v1.0.5)
 
 A standalone Manifest V3 Chrome Extension for Google Maps lead extraction, sequential detail-panel enrichment, canonical lead normalization, and local CSV export.
 
@@ -12,7 +12,7 @@ RAMOS runs completely inside the user's browser without external API servers, ba
 - **Sequential Candidate Queue** — Single-flight candidate tracking with per-candidate bounded timeouts (15s).
 - **Identity Matching** — Strict business identity check (`expectedName` vs `panelName`) to guarantee zero false-positive panel assignments.
 - **Rich Data Fields** — Company name, phone, website, address, city, region, country, postal code, rating, reviews, opening status, price range, booking/ordering/menu URLs.
-- **Standalone Local CSV Export** — Export clean UTF-8 BOM CSV files directly via `chrome.downloads` (`ramos-${query}-${date}.csv`).
+- **Standalone Local CSV & Excel Export** — Export clean UTF-8 BOM CSV files or formatted Microsoft Excel (`.xlsx`) files directly via `chrome.downloads` (`ramos-${query}-${date}.xlsx`).
 
 ---
 
@@ -27,7 +27,7 @@ RAMOS runs completely inside the user's browser without external API servers, ba
 ## Testing & Packaging
 
 - **Run Unit Tests**: `npm test`
-- **Package Extension**: `npm run package:extension` (generates `dist/ramos-maps-connector-v1.0.1.zip`)
+- **Package Extension**: `npm run package:extension` (generates `dist/ramos-maps-connector-v1.0.5.zip`)
 - **Check Project Consistency**: `npm run check:consistency`
 
 ---

@@ -14,10 +14,13 @@
         <span class="logo-icon"><img src="assets/ramos-icon-32.png" width="20" height="20" alt="RAMOS" style="vertical-align: middle; border-radius: 4px;"></span>
         <span class="brand-name">RAMOS</span>
         <span class="brand-sub">MAPS LEAD EXTRACTOR</span>
-        <span id="extVersion" class="version-tag">v1.0.1</span>
+        <span id="extVersion" class="version-tag">v1.0.5</span>
       </div>
       <span class="badge badge-local">STANDALONE</span>
     </div>
+
+    <!-- Feedback Toast / Banner -->
+    <div id="exportToast" class="toast-banner hidden"></div>
 
     <!-- 1. Google Maps Tab Detection -->
     <div class="card maps-card">
@@ -49,7 +52,6 @@
 
       <!-- Action Buttons -->
       <div class="actions-primary">
-        <button id="quickCsvBtn" class="btn btn-secondary" disabled>Download CSV</button>
         <button id="extractBtn" class="btn btn-primary" disabled>Run Discovery</button>
         <button id="stopBtn" class="btn btn-danger hidden">Stop Extraction</button>
       </div>
@@ -76,7 +78,7 @@
       </div>
     </div>
 
-    <!-- 3. Summary Card (After Extraction) -->
+    <!-- 3. Summary Card (Completed Discovery & Exports) -->
     <div id="resultSummary" class="card summary-card hidden">
       <div class="summary-header">
         <span id="summaryTitle" class="summary-title">Discovery Complete</span>
@@ -92,7 +94,8 @@
       </div>
 
       <div class="actions-stacked mt-2">
-        <button id="downloadCsvBtn" class="btn btn-secondary">Download CSV</button>
+        <button id="downloadXlsxBtn" class="btn btn-primary btn-excel" disabled>Download Excel (.xlsx)</button>
+        <button id="downloadCsvBtn" class="btn btn-secondary" disabled>Download CSV (.csv)</button>
       </div>
     </div>
 
@@ -103,6 +106,7 @@
   </div>
 
   <script src="shared/constants.js"></script>
+  <script src="shared/xlsx-builder.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

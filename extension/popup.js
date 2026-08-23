@@ -1,7 +1,7 @@
 /**
- * Standalone Popup UI Controller for RAMOS Maps Connector (v1.0.0)
+ * Standalone Popup UI Controller for RAMOS Maps Connector (v1.0.5)
  * Operates completely client-side. Handles Google Maps tab detection,
- * discovery initiation, live progress tracking, and CSV export.
+ * discovery initiation, live progress tracking, and CSV/XLSX export.
  */
 (function () {
   "use strict";
@@ -12,7 +12,6 @@
     queryInfo: document.getElementById("queryInfo"),
     detectedInfo: document.getElementById("detectedInfo"),
     importLimit: document.getElementById("importLimit"),
-    quickCsvBtn: document.getElementById("quickCsvBtn"),
     extractBtn: document.getElementById("extractBtn"),
     stopBtn: document.getElementById("stopBtn"),
     progressContainer: document.getElementById("progressContainer"),
@@ -34,13 +33,15 @@
     fieldRating: document.getElementById("fieldRating"),
     fieldHours: document.getElementById("fieldHours"),
     extVersion: document.getElementById("extVersion"),
+    downloadXlsxBtn: document.getElementById("downloadXlsxBtn"),
     downloadCsvBtn: document.getElementById("downloadCsvBtn"),
+    exportToast: document.getElementById("exportToast"),
   };
 
   const manifestVersion =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getManifest
       ? chrome.runtime.getManifest().version
-      : "1.0.0";
+      : "1.0.5";
 
   if (el.extVersion) {
     el.extVersion.textContent = `v${manifestVersion}`;
@@ -52,12 +53,22 @@
   let currentDetectedCards = 0;
   let activeSessionId = null;
 
+  function showToast(msg, type = "success") {
+    if (!el.exportToast) return;
+    el.exportToast.className = `toast-banner ${type}`;
+    el.exportToast.textContent = msg;
+    el.exportToast.classList.remove("hidden");
+    setTimeout(() => {
+      if (el.exportToast) el.exportToast.classList.add("hidden");
+    }, 4000);
+  }
+
   function isGoogleMapsUrl(url) {
     if (!url || typeof url !== "string") return false;
     return /^(https?:\/\/)?([a-z0-9-]+\.)*(google\.[a-z.]+|googleusercontent\.com)\/maps(\/|$|\?)/i.test(url.trim());
   }
 
-  // ─── CSV Generation (Fallback Local CSV Generator) ───────────────────────────
+  // ─── CSV & XLSX Generators (Fallback Local Exporters) ────────────────────────
   function escapeCsvCell(val) {
     if (val == null) return "";
     const str = String(val).trim();
@@ -159,14 +170,47 @@
     URL.revokeObjectURL(url);
   }
 
+  function triggerXlsxDownload(leads) {
+    if (typeof RamosXlsxBuilder === "undefined" || typeof RamosXlsxBuilder.buildXlsx !== "function") {
+      showToast("Excel generator unavailable. Exporting CSV instead.", "error");
+      triggerCsvDownload(generateCSV(leads));
+      return;
+    }
+    const buffer = RamosXlsxBuilder.buildXlsx(leads);
+    const now = new Date();
+    const YYYY = now.getFullYear();
+    const MM = String(now.getMonth() + 1).padStart(2, "0");
+    const DD = String(now.getDate()).padStart(2, "0");
+    let slug = "";
+    if (currentSearchQuery) {
+      slug = currentSearchQuery
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+    }
+    const filename = slug
+      ? `ramos-${slug}-${YYYY}-${MM}-${DD}.xlsx`
+      : `ramos-google-maps-${YYYY}-${MM}-${DD}.xlsx`;
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // ─── UI State Rendering ───────────────────────────────────────────────────────
   function updateActionButtons() {
     const readyCount = currentExtractedLeads.length;
     const hasReadyLeads = readyCount > 0;
     const hasCandidates = currentDetectedCards > 0;
 
-    if (el.quickCsvBtn) {
-      el.quickCsvBtn.disabled = !hasReadyLeads && !hasCandidates;
+    if (el.downloadXlsxBtn) {
+      el.downloadXlsxBtn.disabled = !hasReadyLeads;
     }
     if (el.downloadCsvBtn) {
       el.downloadCsvBtn.disabled = !hasReadyLeads;
@@ -221,7 +265,6 @@
 
     if (response.running) {
       if (el.extractBtn) el.extractBtn.classList.add("hidden");
-      if (el.quickCsvBtn) el.quickCsvBtn.classList.add("hidden");
       if (el.stopBtn) el.stopBtn.classList.remove("hidden");
       if (el.progressContainer) el.progressContainer.classList.remove("hidden");
       if (response.currentBusiness) {
@@ -232,7 +275,6 @@
       }
     } else {
       if (el.extractBtn) el.extractBtn.classList.remove("hidden");
-      if (el.quickCsvBtn) el.quickCsvBtn.classList.remove("hidden");
       if (el.stopBtn) el.stopBtn.classList.add("hidden");
       if (el.progressContainer) el.progressContainer.classList.add("hidden");
       if (el.currentBizCard) el.currentBizCard.classList.add("hidden");
@@ -304,19 +346,15 @@
       if (!message || typeof message.type !== "string") return;
 
       if (message.type === "SI_EXPORT_COMPLETE") {
-        console.log(`[RAMOS][EXPORT][SUCCESS] id=${message.downloadId} rows=${message.rowCount}`);
-        if (el.downloadCsvBtn) {
-          el.downloadCsvBtn.textContent = `Downloaded CSV (${message.rowCount})`;
-        }
-        if (el.quickCsvBtn) {
-          el.quickCsvBtn.textContent = `Downloaded (${message.rowCount})`;
-        }
+        const fmtUpper = (message.format || "CSV").toUpperCase();
+        console.log(`[RAMOS][EXPORT][SUCCESS] id=${message.downloadId} rows=${message.rowCount} format=${fmtUpper}`);
+        showToast(`Exported ${message.rowCount} leads to ${fmtUpper}.`, "success");
         return;
       }
 
       if (message.type === "SI_EXPORT_FAILED") {
         console.error(`[RAMOS][EXPORT][ERROR] ${message.error}`);
-        alert(`Export failed: ${message.error}`);
+        showToast(`Export failed: ${message.error}`, "error");
         return;
       }
 
@@ -339,7 +377,6 @@
 
       if (message.status === "completed" || message.status === "cancelled") {
         if (el.extractBtn) el.extractBtn.classList.remove("hidden");
-        if (el.quickCsvBtn) el.quickCsvBtn.classList.remove("hidden");
         if (el.stopBtn) el.stopBtn.classList.add("hidden");
         if (el.progressContainer) el.progressContainer.classList.add("hidden");
         if (el.currentBizCard) el.currentBizCard.classList.add("hidden");
@@ -363,7 +400,6 @@
     const limit = Math.min(Math.max(Number(el.importLimit?.value) || 10, 1), 50);
     if (el.resultSummary) el.resultSummary.classList.add("hidden");
     if (el.extractBtn) el.extractBtn.classList.add("hidden");
-    if (el.quickCsvBtn) el.quickCsvBtn.classList.add("hidden");
     if (el.stopBtn) el.stopBtn.classList.remove("hidden");
     if (el.progressContainer) el.progressContainer.classList.remove("hidden");
     if (el.progressBar) el.progressBar.style.width = "5%";
@@ -377,39 +413,48 @@
           : res?.error || "Initiation failure";
         console.error("[RAMOS][START_FAILED]", errorDetails);
         if (el.extractBtn) el.extractBtn.classList.remove("hidden");
-        if (el.quickCsvBtn) el.quickCsvBtn.classList.remove("hidden");
         if (el.stopBtn) el.stopBtn.classList.add("hidden");
         if (el.progressContainer) el.progressContainer.classList.add("hidden");
-        alert(`Extraction failed: ${errorDetails}`);
+        showToast(`Extraction failed: ${errorDetails}`, "error");
       }
     });
   }
 
   // ─── Event Handlers ───────────────────────────────────────────────────────────
-  function triggerExportFlow() {
-    console.log("[RAMOS][EXPORT_FLOW]");
-    chrome.runtime.sendMessage({ type: "SI_TRIGGER_DOWNLOAD_CSV" }, (res) => {
-      if (chrome.runtime.lastError) {
-        console.error("[RAMOS][EXPORT_ERROR]", chrome.runtime.lastError.message);
-        if (currentExtractedLeads.length > 0) {
-          triggerCsvDownload(generateCSV(currentExtractedLeads));
+  function triggerExport(format = "xlsx") {
+    console.log(`[RAMOS][EXPORT_FLOW] format=${format}`);
+    chrome.runtime.sendMessage(
+      { type: format === "xlsx" ? "SI_TRIGGER_DOWNLOAD_EXCEL" : "SI_TRIGGER_DOWNLOAD_CSV", format },
+      (res) => {
+        if (chrome.runtime.lastError) {
+          const err = chrome.runtime.lastError.message;
+          console.error("[RAMOS][EXPORT_ERROR]", err);
+          if (currentExtractedLeads.length > 0) {
+            if (format === "xlsx") {
+              triggerXlsxDownload(currentExtractedLeads);
+            } else {
+              triggerCsvDownload(generateCSV(currentExtractedLeads));
+            }
+            showToast(`Exported ${currentExtractedLeads.length} leads.`, "success");
+          } else {
+            showToast(`Export failed: ${err}`, "error");
+          }
+          return;
         }
-        return;
+
+        if (res && res.ok) {
+          console.log(`[RAMOS][EXPORT_SUCCESS] format=${format} count=${res.rowCount}`);
+          showToast(`Exported ${res.rowCount || currentExtractedLeads.length} leads to ${format.toUpperCase()}.`, "success");
+        } else {
+          const msg = res?.error || "No completed leads are available to export yet.";
+          console.warn(`[RAMOS][EXPORT_WARN] ${msg}`);
+          showToast(msg, "error");
+        }
       }
-      if (res && res.ok) {
-        console.log(`[RAMOS][EXPORT_SUCCESS] id=${res.downloadId || "direct"}`);
-        return;
-      }
-      if (currentExtractedLeads.length > 0) {
-        triggerCsvDownload(generateCSV(currentExtractedLeads));
-      }
-    });
+    );
   }
 
   function setupActions() {
-    if (el.quickCsvBtn) {
-      el.quickCsvBtn.addEventListener("click", () => triggerExportFlow());
-    }
     if (el.extractBtn) {
       el.extractBtn.addEventListener("click", () => startExtraction());
     }
@@ -418,8 +463,11 @@
         chrome.runtime.sendMessage({ type: "SI_STOP_DISCOVERY" });
       });
     }
+    if (el.downloadXlsxBtn) {
+      el.downloadXlsxBtn.addEventListener("click", () => triggerExport("xlsx"));
+    }
     if (el.downloadCsvBtn) {
-      el.downloadCsvBtn.addEventListener("click", () => triggerExportFlow());
+      el.downloadCsvBtn.addEventListener("click", () => triggerExport("csv"));
     }
   }
 
