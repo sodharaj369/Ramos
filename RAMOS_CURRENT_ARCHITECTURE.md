@@ -3,7 +3,7 @@
 ## Overview & Scope
 **RAMOS** is a standalone, client-side Chrome Extension (Manifest V3) for high-precision lead extraction and detail enrichment directly from Google Maps (`google.com/maps`).
 
-RAMOS operates completely client-side in the user's browser. It has **no dependencies** on external web applications, Supabase databases, backend servers, or third-party API keys. Extracted business leads are processed into a canonical lead format and exported directly to CSV files.
+RAMOS operates completely client-side in the user's browser. It has **no dependencies** on external web applications, Supabase databases, backend servers, or third-party API keys. Extracted business leads are processed into a canonical lead format and exported directly to CSV or Excel (.xlsx) files.
 
 ---
 
@@ -15,7 +15,7 @@ flowchart LR
     B --> C[Sequential Candidate Queue]
     C --> D[Detail Panel Enrichment & Identity Verification]
     D --> E[Canonical Lead Model]
-    E --> F[Standalone CSV Export]
+    E --> F[Standalone CSV / XLSX Export]
 ```
 
 1. **Google Maps Search**: User performs any business search query on Google Maps (e.g., `pizza near Satellite, Ahmedabad`).
@@ -23,7 +23,7 @@ flowchart LR
 3. **Sequential Candidate Queue**: The background service worker manages a single-flight candidate queue with per-candidate bounded timeouts (15s).
 4. **Detail Panel Enrichment**: Content script clicks candidates sequentially, waits for the detail panel to open, verifies identity matching (`expectedName` vs `panelName`), and extracts rich metadata (phone, website, hours, rating, full address).
 5. **Canonical Lead Model**: Extracted attributes are normalized into the `createCanonicalLead` format.
-6. **Standalone CSV Export**: User clicks "Download CSV" in the extension popup to generate a UTF-8 BOM CSV file downloaded via `chrome.downloads`.
+6. **Standalone CSV & XLSX Export**: User clicks "Download Excel" or "Download CSV" in the extension popup to generate clean UTF-8 BOM CSV or ECMA-376 OOXML Strict `.xlsx` files downloaded directly via `chrome.downloads`.
 
 ---
 
@@ -51,9 +51,12 @@ RAMOS Chrome Extension
 │       └── maps-adapter.js (Orchestrator module binding extractor scripts to unified API surface)
 ├── Shared Models & Constants
 │   ├── extension/shared/constants.js (Error codes, extraction modes, max results constants)
-│   └── extension/shared/schema.js (Canonical Lead schema builder: createCanonicalLead)
-└── Verification & Packaging Tooling
+│   ├── extension/shared/schema.js (Canonical Lead schema builder: createCanonicalLead)
+│   └── extension/shared/xlsx-builder.js (100% browser-native ECMA-376 OOXML Strict XLSX Excel exporter)
+└── Verification & Documentation Infrastructure
+    ├── docs/RAMOS_STABLE_BASELINE.md (Frozen engineering baseline specification)
     ├── scripts/extension-package.js (Packaging script creating standalone extension ZIP)
+    ├── scripts/check-project-consistency.js (Automated repository & document consistency checker)
     ├── scripts/verify-packaged-extension-parity.js (Parity verification between source directory and packaged ZIP)
     └── extension/tests/ (Node.js test suites: gmaps-card-pipeline.test.ts, gmaps-vadapav-e2e-diagnostic.test.ts)
 ```

@@ -29,6 +29,7 @@ const requiredDocs = [
   'docs/RAMOS_INTERNAL_AUDIT.md',
   'docs/RAMOS_BRAND_GUIDELINES.md',
   'docs/RAMOS_EXPORT_SPECIFICATION.md',
+  'docs/RAMOS_STABLE_BASELINE.md',
   'docs/chrome-extension.md',
 ];
 
