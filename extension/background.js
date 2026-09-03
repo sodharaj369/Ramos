@@ -950,6 +950,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "SI_DOWNLOAD_FILE") {
+    const url = message.url;
+    const filename = message.filename || "ramos-export.bin";
+    if (!url) {
+      sendResponse({ ok: false, error: "Missing download URL" });
+      return false;
+    }
+    chrome.downloads.download({ url, filename, saveAs: false }, (downloadId) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        console.error(`[SI][DOWNLOAD_FILE_ERROR] ${err.message}`);
+        sendResponse({ ok: false, error: err.message });
+      } else {
+        console.log(`[SI][DOWNLOAD_FILE_SUCCESS] id=${downloadId} filename="${filename}"`);
+        sendResponse({ ok: true, downloadId, filename });
+      }
+    });
+    return true;
+  }
+
   // --- GET_DISCOVERY_STATE / GET_MAPS_STATE ---
   if (message.type === "GET_DISCOVERY_STATE" || message.type === "GET_MAPS_STATE") {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {

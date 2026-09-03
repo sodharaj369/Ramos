@@ -222,50 +222,98 @@
     return "\uFEFF" + [CSV_HEADERS.join(","), ...valid.map(leadToCsvRow)].join("\r\n");
   }
 
-  function fallbackAnchorDownload(url, filename) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  function uint8ToDataUrl(uint8, mimeType) {
+    let binary = "";
+    const len = uint8.length;
+    const CHUNK_SIZE = 8192;
+    for (let i = 0; i < len; i += CHUNK_SIZE) {
+      const sub = uint8.subarray(i, Math.min(i + CHUNK_SIZE, len));
+      binary += String.fromCharCode.apply(null, sub);
+    }
+    const base64 = typeof btoa === "function" ? btoa(binary) : "";
+    return `data:${mimeType};base64,${base64}`;
   }
 
-  function triggerCsvDownload(csvString, filename = "ramos-leads.csv") {
-    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    if (typeof chrome !== "undefined" && chrome.downloads && typeof chrome.downloads.download === "function") {
-      chrome.downloads.download({ url, filename, saveAs: false }, () => {
-        if (chrome.runtime.lastError) {
-          fallbackAnchorDownload(url, filename);
-        } else {
-          setTimeout(() => URL.revokeObjectURL(url), 5000);
-        }
-      });
-    } else {
-      fallbackAnchorDownload(url, filename);
+  function csvToDataUrl(csvString) {
+    return `data:text/csv;charset=utf-8,${encodeURIComponent(csvString)}`;
+  }
+
+  function fallbackAnchorDownload(url, filename) {
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (url.startsWith("blob:")) {
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+    } catch (err) {
+      console.error("[RAMOS][ANCHOR_DOWNLOAD_ERROR]", err);
     }
   }
 
-  function triggerXlsxDownload(leads, filename = "ramos-leads.xlsx") {
-    const XlsxBuilder = window.RamosXlsxBuilder || globalThis.RamosXlsxBuilder;
-    if (!XlsxBuilder) return;
-    const xlsxBytes = XlsxBuilder.buildXlsx(leads);
-    const blob = new Blob([xlsxBytes], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    if (typeof chrome !== "undefined" && chrome.downloads && typeof chrome.downloads.download === "function") {
-      chrome.downloads.download({ url, filename, saveAs: false }, () => {
-        if (chrome.runtime.lastError) {
-          fallbackAnchorDownload(url, filename);
-        } else {
-          setTimeout(() => URL.revokeObjectURL(url), 5000);
+  function downloadDataUrl(dataUrl, filename, callback) {
+    // 1. Send to background service worker for reliable execution in extension background
+    if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
+      chrome.runtime.sendMessage({ type: "SI_DOWNLOAD_FILE", url: dataUrl, filename }, (res) => {
+        if (!chrome.runtime.lastError && res && res.ok) {
+          if (callback) callback({ ok: true, downloadId: res.downloadId });
+          return;
         }
+        // 2. Direct chrome.downloads in popup as fallback
+        if (typeof chrome !== "undefined" && chrome.downloads && typeof chrome.downloads.download === "function") {
+          try {
+            chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, (downloadId) => {
+              if (chrome.runtime.lastError) {
+                fallbackAnchorDownload(dataUrl, filename);
+                if (callback) callback({ ok: false, error: chrome.runtime.lastError.message });
+              } else {
+                if (callback) callback({ ok: true, downloadId });
+              }
+            });
+            return;
+          } catch (e) {
+            fallbackAnchorDownload(dataUrl, filename);
+            if (callback) callback({ ok: false, error: e.message });
+            return;
+          }
+        }
+        fallbackAnchorDownload(dataUrl, filename);
+        if (callback) callback({ ok: true });
       });
-    } else {
-      fallbackAnchorDownload(url, filename);
+      return;
+    }
+
+    // 3. Fallback for testing / standard browser
+    fallbackAnchorDownload(dataUrl, filename);
+    if (callback) callback({ ok: true });
+  }
+
+  function triggerCsvDownload(csvString, filename = "ramos-leads.csv", callback) {
+    try {
+      const dataUrl = csvToDataUrl(csvString);
+      downloadDataUrl(dataUrl, filename, callback);
+    } catch (err) {
+      console.error("[RAMOS][CSV_DOWNLOAD_ERROR]", err);
+      if (callback) callback({ ok: false, error: err.message });
+    }
+  }
+
+  function triggerXlsxDownload(leads, filename = "ramos-leads.xlsx", callback) {
+    const XlsxBuilder = window.RamosXlsxBuilder || globalThis.RamosXlsxBuilder;
+    if (!XlsxBuilder) {
+      if (callback) callback({ ok: false, error: "XlsxBuilder unavailable" });
+      return;
+    }
+    try {
+      const xlsxBytes = XlsxBuilder.buildXlsx(leads);
+      const dataUrl = uint8ToDataUrl(xlsxBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      downloadDataUrl(dataUrl, filename, callback);
+    } catch (err) {
+      console.error("[RAMOS][XLSX_DOWNLOAD_ERROR]", err);
+      if (callback) callback({ ok: false, error: err.message });
     }
   }
 
@@ -742,8 +790,19 @@
 
   function displayWebsiteResults(lead, titleText = "Extraction Complete") {
     if (!lead) return;
+    currentWebLead = lead;
     if (el.webResultSummary) el.webResultSummary.classList.remove("hidden");
     if (el.webSummaryTitle) el.webSummaryTitle.textContent = titleText;
+
+    // Ensure download buttons are enabled and wired to current result
+    if (el.webDownloadXlsxBtn) {
+      el.webDownloadXlsxBtn.disabled = false;
+      el.webDownloadXlsxBtn.onclick = () => exportWebsiteLead("xlsx");
+    }
+    if (el.webDownloadCsvBtn) {
+      el.webDownloadCsvBtn.disabled = false;
+      el.webDownloadCsvBtn.onclick = () => exportWebsiteLead("csv");
+    }
 
     // Company, Email, Phone, Address
     if (el.webLeadCompany) el.webLeadCompany.textContent = lead.company_name || "—";
@@ -926,6 +985,22 @@
     }
   }
 
+  function getWebsiteExportFilename(lead, format) {
+    let clean = (lead && lead.company_name ? lead.company_name : "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (!clean && lead && lead.website) {
+      try {
+        clean = new URL(lead.website).hostname.replace(/^www\./, "").replace(/[^a-z0-9]+/g, "-");
+      } catch {
+        clean = "lead";
+      }
+    }
+    if (!clean) clean = "lead";
+    return `ramos-website-${clean}.${format}`;
+  }
+
   function exportWebsiteLead(format = "xlsx") {
     if (!currentWebLead) {
       showToast("No extracted website data available to export.", "error");
@@ -935,19 +1010,29 @@
     isWebExporting = true;
 
     try {
-      const filename = `ramos-website-${(currentWebLead.company_name || "lead").toLowerCase().replace(/[^a-z0-9]/g, "-")}.${format}`;
+      const filename = getWebsiteExportFilename(currentWebLead, format);
       if (format === "xlsx") {
-        triggerXlsxDownload([currentWebLead], filename);
+        triggerXlsxDownload([currentWebLead], filename, (res) => {
+          isWebExporting = false;
+          if (res && res.ok) {
+            showToast(`Website lead exported to ${format.toUpperCase()}.`, "success");
+          } else {
+            showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+          }
+        });
       } else {
-        triggerCsvDownload(generateCSV([currentWebLead]), filename);
+        triggerCsvDownload(generateCSV([currentWebLead]), filename, (res) => {
+          isWebExporting = false;
+          if (res && res.ok) {
+            showToast(`Website lead exported to ${format.toUpperCase()}.`, "success");
+          } else {
+            showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+          }
+        });
       }
-      showToast(`Website lead exported to ${format.toUpperCase()}.`, "success");
     } catch (err) {
+      isWebExporting = false;
       showToast(`Export failed: ${err.message}`, "error");
-    } finally {
-      setTimeout(() => {
-        isWebExporting = false;
-      }, 1000);
     }
   }
 
@@ -976,7 +1061,7 @@
     el.webDownloadCsvBtn?.addEventListener("click", () => exportWebsiteLead("csv"));
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function initPopup() {
     listenForProgress();
     setupActions();
     checkGoogleMapsTab();
@@ -986,5 +1071,11 @@
         checkGoogleMapsTab();
       }
     }, 2000);
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initPopup);
+  } else {
+    initPopup();
+  }
 })();

@@ -654,12 +654,14 @@
       lead.phone = lead.phones[0].phone;
     }
 
-    // Deterministic representation for additional values in existing canonical schema
+    // Deterministic representation for additional values and people in existing canonical schema
     const extraEmails = lead.emails.slice(1).map((e) => e.email);
     const extraPhones = lead.phones.slice(1).map((p) => p.phone);
+    const peopleList = (lead.people || []).map((p) => p.name + (p.title ? ` (${p.title})` : ""));
     const extras = [];
     if (extraEmails.length > 0) extras.push(`Additional Emails: ${extraEmails.join(", ")}`);
     if (extraPhones.length > 0) extras.push(`Additional Phones: ${extraPhones.join(", ")}`);
+    if (peopleList.length > 0) extras.push(`Leadership / Team: ${peopleList.join(", ")}`);
     if (extras.length > 0 && !lead.business_type) {
       lead.business_type = extras.join(" | ");
     }
