@@ -30,9 +30,10 @@
    * @param {Object} acquiredPage - AcquiredPage object
    * @param {string} rootDomain - Canonical root domain of the target site
    * @param {number} [currentDepth=0] - Current depth of the acquired page
+   * @param {Object} [missingFields={}] - Currently unsatisfied fields for field-aware dynamic scoring
    * @returns {Array<Object>} Discovered link candidates sorted by priority
    */
-  function discoverLinks(acquiredPage, rootDomain, currentDepth = 0) {
+  function discoverLinks(acquiredPage, rootDomain, currentDepth = 0, missingFields = {}) {
     const doc = acquiredPage.document || acquiredPage;
     const pageUrl = acquiredPage.url || "";
     const baseUrl = acquiredPage.baseUrl || pageUrl;
@@ -65,20 +66,39 @@
 
       const anchorText = Normalizers.normalizeText(anchor.textContent || "");
 
-      // Identify nearest structural parent container
+      // Identify nearest structural parent container or button role
       let containerTag = "";
+      const anchorClasses = (anchor.getAttribute("class") || "").toLowerCase();
+      const anchorRole = (anchor.getAttribute("role") || "").toLowerCase();
+      if (anchorRole === "button" || /btn|button|cta|action/i.test(anchorClasses)) {
+        containerTag = "BUTTON";
+      }
+
       let parent = anchor.parentElement;
       while (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML") {
-        const tag = parent.tagName.toUpperCase();
-        if (tag === "NAV" || tag === "HEADER" || tag === "FOOTER") {
-          containerTag = tag;
+        const tag = (parent.tagName || "").toUpperCase();
+        const pClass = (typeof parent.getAttribute === "function" ? parent.getAttribute("class") || "" : "").toLowerCase();
+        const pId = (typeof parent.getAttribute === "function" ? parent.getAttribute("id") || "" : "").toLowerCase();
+
+        if (tag === "NAV" || tag === "HEADER" || /nav|menu|header/i.test(pClass) || /nav|menu|header/i.test(pId)) {
+          if (!containerTag || containerTag === "BUTTON") containerTag = "NAV";
           break;
+        } else if (tag === "FOOTER" || /footer/i.test(pClass) || /footer/i.test(pId)) {
+          if (!containerTag || containerTag === "BUTTON") containerTag = "FOOTER";
+          break;
+        } else if (tag === "MAIN" || tag === "ARTICLE" || tag === "SECTION") {
+          if (!containerTag) containerTag = "MAIN";
         }
         parent = parent.parentElement;
       }
 
-      // Compute priority score
-      const priorityInfo = PagePriority.scoreLink(cleanUrl, anchorText, childDepth, containerTag);
+      // Compute deterministic priority score with field awareness
+      const priorityInfo = PagePriority.scoreLink(cleanUrl, anchorText, childDepth, containerTag, missingFields);
+
+      // Filter out heavily negative utility/legal URLs directly
+      if (priorityInfo.score <= -40) {
+        continue;
+      }
 
       // Keep highest score if duplicate URL appears multiple times on page
       if (discoveredMap.has(cleanUrl)) {
@@ -87,12 +107,14 @@
           existing.priority = priorityInfo.score;
           existing.anchorText = anchorText || existing.anchorText;
           existing.pageIntent = priorityInfo.pageIntent;
+          existing.containerTag = containerTag || existing.containerTag;
         }
       } else {
         discoveredMap.set(cleanUrl, {
           url: cleanUrl,
           anchorText,
           depth: childDepth,
+          containerTag,
           priority: priorityInfo.score,
           pageIntent: priorityInfo.pageIntent,
           discoveredFrom: pageUrl,

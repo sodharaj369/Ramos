@@ -1,42 +1,49 @@
 /**
  * RAMOS Website Intelligence — Crawl Queue
- * Bounded, deduplicating priority crawl queue.
- * Enforces depth limit, page cap, same-domain boundaries, and early exit policies.
+ * Dynamic, deduplicating priority crawl queue.
+ * Enforces dynamic re-ranking, crawl budget, skip counting, and field-aware early termination.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory();
+    module.exports = factory(require("./page-priority.js"));
   } else {
     const g = typeof globalThis !== "undefined" ? globalThis : root;
-    root.RamosCrawlQueue = factory();
+    root.RamosCrawlQueue = factory(root.RamosPagePriority || g.RamosPagePriority);
     if (g && !g.RamosCrawlQueue) g.RamosCrawlQueue = root.RamosCrawlQueue;
   }
-})(typeof self !== "undefined" ? self : typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof self !== "undefined" ? self : typeof globalThis !== "undefined" ? globalThis : this, function (PagePriority) {
   "use strict";
 
   /**
-   * Bounded Priority Crawl Queue for a single website extraction session.
+   * Dynamic Priority Crawl Queue for a single website extraction session.
    */
   class CrawlQueue {
     /**
      * @param {Object} [options]
-     * @param {number} [options.maxPages=10] - Hard page cap (default 10, max 20)
+     * @param {number} [options.maxPages=10] - Hard page budget ceiling (1, 5, 10, or 20)
      * @param {number} [options.maxDepth=2] - Max hops from root (default 2)
      * @param {string} [options.rootDomain] - Domain boundary
      */
     constructor(options = {}) {
       this.maxPages = Math.min(Math.max(Number(options.maxPages) || 10, 1), 20);
+      this.pagesBudget = this.maxPages;
       this.maxDepth = Math.min(Math.max(Number(options.maxDepth) || 2, 1), 3);
       this.rootDomain = (options.rootDomain || "").toLowerCase().replace(/^www\./, "").trim();
 
-      this.pending = []; // Array of { url, depth, priority, discoveredFrom, status }
-      this.visited = new Map(); // url -> { depth, visitedAt, status }
+      this.pending = []; // Array of { url, depth, priority, discoveredFrom, pageIntent, containerTag, anchorText, status }
+      this.visited = new Map(); // url -> { depth, visitedAt, status, pageIntent }
       this.queuedUrls = new Set(); // url set for O(1) deduplication
+
+      this.pagesSkipped = 0;
+      this.highValuePagesVisited = 0;
+      this.stoppedEarly = false;
+      this.stopReason = null;
     }
 
     /**
      * Enqueues an initial root page or discovered child link.
-     * @param {Object} item - { url, depth, priority, discoveredFrom, pageIntent }
+     * Rejects utility/legal paths that would waste crawl budget.
+     * @param {Object} item - { url, depth, priority, discoveredFrom, pageIntent, containerTag, anchorText }
      * @returns {boolean} Whether item was added
      */
     enqueue(item) {
@@ -55,7 +62,14 @@
         return false;
       }
 
-      // Check total page ceiling (visited + pending)
+      // Do NOT waste crawl budget on utility/legal paths
+      const priority = typeof item.priority === "number" ? item.priority : 0;
+      if (priority <= -40) {
+        this.pagesSkipped++;
+        return false;
+      }
+
+      // Check total page ceiling
       if (this.visited.size >= this.maxPages) {
         return false;
       }
@@ -63,9 +77,11 @@
       const queueItem = {
         url,
         depth,
-        priority: typeof item.priority === "number" ? item.priority : 0,
+        priority,
         discoveredFrom: item.discoveredFrom || null,
         pageIntent: item.pageIntent || "GENERIC",
+        containerTag: item.containerTag || "",
+        anchorText: item.anchorText || "",
         status: "pending",
       };
 
@@ -93,6 +109,31 @@
     }
 
     /**
+     * Dynamically recalculates the priority of all pending queue items
+     * based on currently unsatisfied fields, then re-sorts descending.
+     * @param {Object} missingFields - { missingEmail, missingPhone, missingAddress, missingPeople, missingCompany, missingSocial }
+     */
+    reorderPending(missingFields) {
+      if (!PagePriority || typeof PagePriority.scoreLink !== "function") return;
+      if (!this.pending.length) return;
+
+      for (const item of this.pending) {
+        const res = PagePriority.scoreLink(
+          item.url,
+          item.anchorText || "",
+          item.depth || 1,
+          item.containerTag || "",
+          missingFields
+        );
+        item.priority = res.score;
+        item.pageIntent = res.pageIntent;
+      }
+
+      // Re-sort pending descending by new dynamic priority
+      this.pending.sort((a, b) => b.priority - a.priority);
+    }
+
+    /**
      * Retrieves the highest priority unvisited page from the queue.
      * @returns {Object|null}
      */
@@ -108,20 +149,26 @@
     }
 
     /**
-     * Marks a URL as completed or failed.
+     * Marks a URL as completed, failed, or skipped, tracking high-value visits.
      * @param {string} url
      * @param {"completed"|"failed"|"skipped"} [status="completed"]
+     * @param {string} [pageIntent="GENERIC"]
      */
-    markVisited(url, status = "completed") {
+    markVisited(url, status = "completed", pageIntent = "GENERIC") {
       if (!url) return;
       this.visited.set(url, {
         status,
+        pageIntent,
         visitedAt: Date.now(),
       });
+
+      if (status === "completed" && ["CONTACT", "TEAM", "ABOUT", "LOCATION"].includes(pageIntent)) {
+        this.highValuePagesVisited++;
+      }
     }
 
     /**
-     * Checks if more pages can be visited.
+     * Checks if more pages can be visited within the allocated budget.
      * @returns {boolean}
      */
     hasMore() {
@@ -137,39 +184,58 @@
     }
 
     /**
-     * Checks whether essential business intelligence fields are already satisfied,
-     * permitting early termination without unnecessary additional page crawls.
-     *
-     * Essential criteria:
-     * - company_name is present
-     * - email is present
-     * - phone is present
-     * - address (or city + country) is present
-     * - at least 1 page has been visited
+     * Evaluates whether essential business intelligence fields have sufficiently
+     * strong evidence, permitting early termination without wasting remaining budget.
      *
      * @param {Object} currentLead - Aggregated canonical lead so far
-     * @returns {boolean}
+     * @param {Object} [scope={}] - Target extraction scope
+     * @returns {{ canStop: boolean, reason?: string }}
      */
-    canTerminateEarly(currentLead) {
-      if (!currentLead || this.visited.size < 2) return false;
+    canTerminateEarly(currentLead, scope = {}) {
+      if (!currentLead || this.visited.size < 2) {
+        return false;
+      }
 
       const hasCompany = Boolean(currentLead.company_name);
       const hasEmail = Boolean(currentLead.email);
       const hasPhone = Boolean(currentLead.phone);
       const hasLocation = Boolean(currentLead.address || (currentLead.city && currentLead.country));
 
-      return hasCompany && hasEmail && hasPhone && hasLocation;
+      const wantsPeople = scope.people !== false;
+      const hasPeople = !wantsPeople || (Array.isArray(currentLead.people) && currentLead.people.length > 0);
+
+      // Early stop condition 1: All primary target fields are satisfied
+      if (hasCompany && hasEmail && hasPhone && hasLocation && hasPeople) {
+        this.stoppedEarly = true;
+        this.stopReason = "all_requested_fields_satisfied";
+        return true;
+      }
+
+      // Early stop condition 2: No high-value pages remain in pending queue and key contacts already acquired
+      if (this.pending.length > 0) {
+        const hasPendingHighValue = this.pending.some((p) => p.priority >= 40);
+        if (!hasPendingHighValue && hasCompany && hasEmail && hasPhone) {
+          this.stoppedEarly = true;
+          this.stopReason = "no_more_relevant_pages";
+          return true;
+        }
+      }
+
+      return false;
     }
 
     /**
-     * Returns stats summary.
+     * Returns transparent crawl statistics summary.
      */
     getStats() {
       return {
-        visitedCount: this.visited.size,
+        pagesScanned: this.visited.size,
+        pagesBudget: this.pagesBudget,
+        stoppedEarly: this.stoppedEarly,
+        stopReason: this.stopReason || (this.visited.size >= this.maxPages ? "budget_exhausted" : "completed"),
+        pagesSkipped: this.pagesSkipped,
+        highValuePagesVisited: this.highValuePagesVisited,
         pendingCount: this.pending.length,
-        maxPages: this.maxPages,
-        maxDepth: this.maxDepth,
       };
     }
   }

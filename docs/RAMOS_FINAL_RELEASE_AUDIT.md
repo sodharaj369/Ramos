@@ -1,23 +1,24 @@
 # RAMOS Extension — Final Release & Hardening Audit (v1.0.5)
 
 **Release Date:** September 3, 2026  
-**Artifact:** `dist/ramos-maps-connector-v1.0.5.zip` (90.2 KB)  
+**Artifact:** `dist/ramos-maps-connector-v1.0.5.zip` (94.6 KB)  
 **Version:** `v1.0.5`  
-**Verdict:** **GO (APPROVED FOR PRODUCTION RELEASE)**
+**Verdict:** **GO (APPROVED FOR PRODUCTION RELEASE — CRAWLER INTELLIGENCE FROZEN)**
 
 ---
 
 ## 1. Executive Summary & Verdict
 
-RAMOS has completed its full implementation roadmap (Phases 0 through 7). The extension successfully unites **Google Maps Lead Extraction** and **Client-Side Website Intelligence** within a single, privacy-first, zero-dependency Chrome Extension.
+RAMOS has completed its full implementation roadmap (Phases 0 through 7) and post-Phase 7 crawler intelligence hardening. The extension successfully unites **Google Maps Lead Extraction** and **Client-Side Website Intelligence** within a single, privacy-first, zero-dependency Chrome Extension.
 
 ### Release Decision: **GO (100% PASS)**
-- **All 78 Automated Tests Passing**: 14 Maps tests + 64 Website tests.
+- **All 95 Automated Tests Passing**: 14 Maps tests + 81 Website tests.
+- **Crawler Intelligence & Budget Bounding**: Maximum crawl budget enforcement (1, 5, 10, 20 as ceilings), semantic priority scoring, dynamic queue re-ranking based on missing fields, fragment/tracking URL deduplication, and transparent stats reporting ("Scanned X of Y pages").
 - **Maps Baseline Stability**: Google Maps extraction engine remains 100% frozen, intact, and regression-tested.
 - **Website Intelligence**: Single-page extraction, targeted business crawler, people/leadership extraction, deterministic confidence scoring, and Maps enrichment fully validated.
 - **Export Parity**: Strict 24-column compatibility across RFC-4180 CSV and ECMA-376 OOXML Strict Excel (.xlsx).
 - **Security & Privacy**: Zero remote proxy dependencies, zero external APIs, zero production secrets or real lead data in Git, minimal host permissions.
-- **Package Integrity**: 34 clean runtime files (90.2 KB) with verified source-to-distribution parity.
+- **Package Integrity**: 34 clean runtime files (94.6 KB) with verified source-to-distribution parity.
 
 ---
 

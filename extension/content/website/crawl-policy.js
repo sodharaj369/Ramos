@@ -31,7 +31,9 @@
     /\/cdn-cgi\//i,
     /\/cart\b/i,
     /\/checkout\b/i,
+    /\/basket\b/i,
     /\/my-account\b/i,
+    /\/account\b/i,
     /\/login\b/i,
     /\/signin\b/i,
     /\/signup\b/i,
@@ -40,6 +42,19 @@
     /\/logout\b/i,
     /\/feed\b/i,
     /\/rss\b/i,
+    /\/search\b/i,
+    /\/privacy-policy\b/i,
+    /\/terms-of-service\b/i,
+    /\/terms-and-conditions\b/i,
+    /\/terms-of-use\b/i,
+    /\/cookie-policy\b/i,
+    /\/disclaimer\b/i,
+    /\/page\/\d+\b/i,
+    /\/tag\//i,
+    /\/category\//i,
+    /\/author\//i,
+    /\/archive\//i,
+    /\/\d{4}\/\d{2}\//i,
   ];
 
   /**
@@ -107,7 +122,12 @@
       }
     }
 
-    // 5. Clean URL (strip hash and tracking params)
+    // 5. Search query parameters exclusion
+    if (parsed.searchParams.has("s") || parsed.searchParams.has("q") || parsed.searchParams.has("search")) {
+      return { allowed: false, reason: "Search query result URL" };
+    }
+
+    // 6. Clean URL (strip hash and tracking params)
     const normalizedUrl = Normalizers ? Normalizers.normalizeUrl(trimmed) : parsed.origin + parsed.pathname;
 
     return {

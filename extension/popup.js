@@ -667,7 +667,7 @@
           onProgress: (p) => {
             pagesCount = p.pagesScanned || pagesCount;
             if (el.webProgressText) el.webProgressText.textContent = `Scanning: ${p.currentUrl}`;
-            if (el.webMetricScanned) el.webMetricScanned.textContent = String(pagesCount);
+            if (el.webMetricScanned) el.webMetricScanned.textContent = `${pagesCount} of ${crawlLimit}`;
             if (el.webMetricDiscovered) el.webMetricDiscovered.textContent = String((p.pendingPages || 0) + pagesCount);
             if (el.webProgressBar) {
               const pct = Math.min(Math.round((pagesCount / crawlLimit) * 100), 95);
@@ -683,8 +683,17 @@
         displayWebsiteResults(lead, "Extraction Failed (0 Pages Accessible)");
         showToast("Could not access target website. Check URL, network, or permissions.", "error");
       } else {
-        displayWebsiteResults(lead, "Extraction Complete");
-        showToast("Website extraction completed successfully.", "success");
+        const stats = lead._crawlStats || {};
+        const scanned = stats.pagesScanned || 1;
+        const budget = stats.pagesBudget || crawlLimit;
+        let title = "Extraction Complete";
+        if (budget > 1) {
+          title = stats.stoppedEarly
+            ? `Extraction Complete (Scanned ${scanned} of ${budget} pages)`
+            : `Extraction Complete (Scanned ${scanned} of ${budget} pages)`;
+        }
+        displayWebsiteResults(lead, title);
+        showToast(`Website extraction completed (Scanned ${scanned} of ${budget} pages).`, "success");
       }
     } catch (err) {
       if (err && (err.message === "CRAWL_ABORTED" || err.name === "AbortError")) {

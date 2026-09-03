@@ -265,25 +265,38 @@
       });
 
       allEvidence.push(...candidates);
-      queue.markVisited(nextItem.url, "completed");
+      queue.markVisited(nextItem.url, "completed", nextItem.pageIntent);
 
-      // 2. Discover internal links if not at maxDepth
+      // Compute current extracted state to identify missing fields
+      const resolvedTemp = Confidence && typeof Confidence.resolveAllCandidates === "function"
+        ? Confidence.resolveAllCandidates(allEvidence)
+        : { bestCandidates: selectBestCandidates(allEvidence), fieldRankings: {} };
+      const tempLead = buildCanonicalLead(resolvedTemp.bestCandidates, normalizedRoot, allEvidence, {
+        pagesScanned: queue.getVisitedCount(),
+        people: allPeople,
+      });
+
+      const missingFields = {
+        missingEmail: !tempLead.email,
+        missingPhone: !tempLead.phone,
+        missingAddress: !tempLead.address && !(tempLead.city && tempLead.country),
+        missingPeople: (!tempLead.people || tempLead.people.length === 0) && options.scope?.people !== false,
+        missingCompany: !tempLead.company_name,
+        missingSocial: !tempLead.social || Object.values(tempLead.social).every((v) => !v),
+      };
+
+      // 2. Discover internal links with field awareness
       if (nextItem.depth < maxDepth && LinkDiscovery) {
-        const discovered = LinkDiscovery.discoverLinks(acquiredPage, rootDomain, nextItem.depth);
+        const discovered = LinkDiscovery.discoverLinks(acquiredPage, rootDomain, nextItem.depth, missingFields);
         queue.enqueueMany(discovered);
       }
 
+      // Dynamic queue re-ranking: prioritize remaining discovered pages according to missing fields
+      queue.reorderPending(missingFields);
+
       // 3. Early Termination Check
       if (enableEarlyExit) {
-        const resolvedTemp = Confidence && typeof Confidence.resolveAllCandidates === "function"
-          ? Confidence.resolveAllCandidates(allEvidence)
-          : { bestCandidates: selectBestCandidates(allEvidence), fieldRankings: {} };
-        const tempLead = buildCanonicalLead(resolvedTemp.bestCandidates, normalizedRoot, allEvidence, {
-          pagesScanned: queue.getVisitedCount(),
-          people: allPeople,
-        });
-
-        if (queue.canTerminateEarly(tempLead)) {
+        if (queue.canTerminateEarly(tempLead, options.scope)) {
           stoppedEarly = true;
           break;
         }
@@ -297,7 +310,9 @@
 
     const finalLead = buildCanonicalLead(resolvedFinal.bestCandidates, normalizedRoot, allEvidence, {
       pagesScanned: visitedPagesMeta.length,
+      pagesBudget: queue.pagesBudget,
       stoppedEarly,
+      stopReason: queue.stopReason || (stoppedEarly ? "all_requested_fields_satisfied" : (visitedPagesMeta.length >= queue.maxPages ? "budget_exhausted" : "completed")),
       visitedPagesMeta,
       queueStats: queue.getStats(),
       people: allPeople,
@@ -309,15 +324,18 @@
 
   /**
    * Helper: Cleans title string to isolate brand name.
+   * Strips common page prefixes like "About", "Contact", "Welcome to", etc.
    */
   function cleanTitleBranding(title) {
     if (!title || typeof title !== "string") return "";
-    const clean = title.trim();
+    let clean = title.trim();
+    clean = clean.replace(/^(about|contact|welcome to|home of|meet)\s+/i, "").trim();
     const parts = clean.split(/\s*[-|–—:•]\s*/);
     if (parts.length > 1) {
       for (const part of parts) {
-        if (Validators.isValidCompanyName(part)) {
-          return part.trim();
+        const trimmedPart = part.trim().replace(/^(about|contact|welcome to|home of|meet)\s+/i, "").trim();
+        if (Validators.isValidCompanyName(trimmedPart)) {
+          return trimmedPart;
         }
       }
     }
@@ -650,7 +668,11 @@
     lead._fieldRankings = meta.fieldRankings || null;
     lead._crawlStats = {
       pagesScanned: meta.pagesScanned || 1,
+      pagesBudget: meta.pagesBudget || meta.queueStats?.pagesBudget || meta.pagesScanned || 1,
       stoppedEarly: Boolean(meta.stoppedEarly),
+      stopReason: meta.stopReason || meta.queueStats?.stopReason || (Boolean(meta.stoppedEarly) ? "all_requested_fields_satisfied" : "completed"),
+      pagesSkipped: meta.queueStats?.pagesSkipped || 0,
+      highValuePagesVisited: meta.queueStats?.highValuePagesVisited || 0,
       totalEvidenceCount: allEvidence.length,
       queueStats: meta.queueStats || null,
     };

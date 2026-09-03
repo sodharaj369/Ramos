@@ -95,9 +95,12 @@
       ];
       paramsToStrip.forEach((param) => resolved.searchParams.delete(param));
 
+      // Strip URL fragment / hash to prevent duplicate crawls of page sections
+      resolved.hash = "";
+
       // Remove trailing slash if path is just "/"
       let result = resolved.toString();
-      if (resolved.pathname === "/" && !resolved.search && !resolved.hash) {
+      if (resolved.pathname === "/" && !resolved.search) {
         result = `${resolved.protocol}//${resolved.host}`;
       }
       return result;
