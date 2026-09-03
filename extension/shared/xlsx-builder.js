@@ -407,5 +407,276 @@
     COLUMN_SPECS,
     HEADERS,
     buildXlsx,
+    buildWebsiteXlsx,
   };
+
+  // ─── WEBSITE INTELLIGENCE EXTENDED EXPORT ─────────────────────────────────
+  // Produces a 2-sheet XLSX:
+  //   Sheet 1 "Leads"  – all contact/social columns (no Maps-specific Rating/Reviews/etc.)
+  //   Sheet 2 "People" – one row per extracted person
+  // The existing buildXlsx() remains 100% unchanged for Maps.
+
+  function buildWebsiteXlsx(leads) {
+    const validLeads = (leads || []).filter((l) => l && (l.company_name || l.website || l.email || l.phone));
+    const now = new Date().toISOString();
+
+    // ── Sheet 1: Leads (extended columns) ─────────────────────────────────────
+    const WEB_COLUMN_SPECS = [
+      { header: "Company",             width: 30, type: "str",  align: "left"  },
+      { header: "Website",             width: 34, type: "url",  align: "left"  },
+      { header: "Primary Email",       width: 30, type: "str",  align: "left"  },
+      { header: "Additional Emails",   width: 40, type: "str",  align: "left"  },
+      { header: "Email Status",        width: 16, type: "str",  align: "left"  },
+      { header: "Primary Phone",       width: 18, type: "text", align: "left"  },
+      { header: "Additional Phones",   width: 34, type: "str",  align: "left"  },
+      { header: "Address",             width: 45, type: "str",  align: "left"  },
+      { header: "City",                width: 18, type: "str",  align: "left"  },
+      { header: "State / Region",      width: 18, type: "str",  align: "left"  },
+      { header: "Country",             width: 15, type: "str",  align: "left"  },
+      { header: "Postal Code",         width: 14, type: "text", align: "left"  },
+      { header: "Industry",            width: 28, type: "str",  align: "left"  },
+      { header: "Description",         width: 50, type: "str",  align: "left"  },
+      { header: "LinkedIn",            width: 40, type: "url",  align: "left"  },
+      { header: "Twitter / X",         width: 34, type: "url",  align: "left"  },
+      { header: "Facebook",            width: 34, type: "url",  align: "left"  },
+      { header: "Instagram",           width: 34, type: "url",  align: "left"  },
+      { header: "YouTube",             width: 34, type: "url",  align: "left"  },
+      { header: "GitHub",              width: 34, type: "url",  align: "left"  },
+      { header: "Booking URL",         width: 32, type: "url",  align: "left"  },
+      { header: "Ordering URL",        width: 32, type: "url",  align: "left"  },
+      { header: "Menu URL",            width: 32, type: "url",  align: "left"  },
+      { header: "Source URL",          width: 40, type: "url",  align: "left"  },
+      { header: "Imported At",         width: 24, type: "str",  align: "left"  },
+      { header: "Source Query",        width: 28, type: "str",  align: "left"  },
+    ];
+
+    // ── Sheet 2: People ───────────────────────────────────────────────────────
+    const PEOPLE_COLUMN_SPECS = [
+      { header: "Company",      width: 30, type: "str",  align: "left" },
+      { header: "Name",         width: 24, type: "str",  align: "left" },
+      { header: "Title",        width: 26, type: "str",  align: "left" },
+      { header: "Email",        width: 30, type: "str",  align: "left" },
+      { header: "Phone",        width: 18, type: "text", align: "left" },
+      { header: "LinkedIn",     width: 40, type: "url",  align: "left" },
+      { header: "Profile URL",  width: 40, type: "url",  align: "left" },
+    ];
+
+    // Helper: build sheet XML from column specs + rows of value arrays
+    function buildSheetXml(colSpecs, dataRows) {
+      const maxRow = dataRows.length + 1;
+      const maxColLetter = getColLetter(colSpecs.length - 1);
+      const tableDimension = `A1:${maxColLetter}${maxRow}`;
+
+      let colsXml = "<cols>";
+      for (let i = 0; i < colSpecs.length; i++) {
+        const colIdx = i + 1;
+        colsXml += `<col min="${colIdx}" max="${colIdx}" width="${colSpecs[i].width}" customWidth="1"/>`;
+      }
+      colsXml += "</cols>";
+
+      // Header row
+      let rowsXml = `<row r="1" customHeight="1" ht="28">`;
+      colSpecs.forEach((spec, colIdx) => {
+        const cellRef = `${getColLetter(colIdx)}1`;
+        rowsXml += `<c r="${cellRef}" s="1" t="inlineStr"><is><t xml:space="preserve">${escapeXml(spec.header)}</t></is></c>`;
+      });
+      rowsXml += `</row>`;
+
+      // Data rows
+      dataRows.forEach((vals, rowIdx) => {
+        const r = rowIdx + 2;
+        const isOdd = r % 2 !== 0;
+        rowsXml += `<row r="${r}">`;
+        vals.forEach((val, colIdx) => {
+          const cellRef = `${getColLetter(colIdx)}${r}`;
+          const spec = colSpecs[colIdx];
+          const valStr = val != null ? String(val).trim() : "";
+          let styleId = isOdd ? 3 : 2;
+
+          if (!valStr.length) {
+            rowsXml += `<c r="${cellRef}" s="${styleId}"/>`;
+          } else if (spec.type === "num" && !isNaN(Number(valStr))) {
+            styleId = isOdd ? 7 : 6;
+            rowsXml += `<c r="${cellRef}" s="${styleId}"><v>${Number(valStr)}</v></c>`;
+          } else if (spec.type === "text") {
+            styleId = isOdd ? 5 : 4;
+            rowsXml += `<c r="${cellRef}" s="${styleId}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(valStr)}</t></is></c>`;
+          } else if (spec.type === "url" && isUrl(valStr)) {
+            styleId = isOdd ? 9 : 8;
+            rowsXml += `<c r="${cellRef}" s="${styleId}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(valStr)}</t></is></c>`;
+          } else {
+            rowsXml += `<c r="${cellRef}" s="${styleId}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(valStr)}</t></is></c>`;
+          }
+        });
+        rowsXml += `</row>`;
+      });
+
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="${tableDimension}"/>
+  <sheetViews>
+    <sheetView showGridLines="1" tabSelected="1">
+      <pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>
+    </sheetView>
+  </sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+  ${colsXml}
+  <sheetData>
+    ${rowsXml}
+  </sheetData>
+  <autoFilter ref="${tableDimension}"/>
+  <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+</worksheet>`;
+    }
+
+    // Build Leads sheet rows
+    const leadsRows = validLeads.map((l) => {
+      const social = l.social || {};
+      const extraEmails = Array.isArray(l.emails) && l.emails.length > 1
+        ? l.emails.slice(1).map((e) => e.email || e).join("; ")
+        : "";
+      const extraPhones = Array.isArray(l.phones) && l.phones.length > 1
+        ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
+        : "";
+      return [
+        l.company_name || l.website || "—",
+        l.website,
+        l.email,
+        extraEmails,
+        l.email_status,
+        l.phone,
+        extraPhones,
+        l.address,
+        l.city,
+        l.region || l.state,
+        l.country,
+        l.postal_code,
+        l.category,
+        l.business_type || "",
+        social.linkedin || "",
+        social.twitter_x || "",
+        social.facebook || "",
+        social.instagram || "",
+        social.youtube || "",
+        social.github || "",
+        l.booking_url,
+        l.ordering_url,
+        l.menu_url,
+        l.source_url,
+        l.discovered_at || l.imported_at || now,
+        l.sourceQuery,
+      ];
+    });
+
+    // Build People sheet rows (one row per person, across all leads)
+    const peopleRows = [];
+    for (const l of validLeads) {
+      if (!Array.isArray(l.people) || l.people.length === 0) continue;
+      for (const p of l.people) {
+        peopleRows.push([
+          l.company_name || l.website || "—",
+          p.name || "",
+          p.title || "",
+          p.email || "",
+          p.phone || "",
+          p.linkedin_url || "",
+          p.profile_url || p.linkedin_url || "",
+        ]);
+      }
+    }
+
+    const sheet1Xml = buildSheetXml(WEB_COLUMN_SPECS, leadsRows);
+    const sheet2Xml = buildSheetXml(PEOPLE_COLUMN_SPECS, peopleRows.length > 0 ? peopleRows : [["(No people detected)", "", "", "", "", "", ""]]);
+
+    // OOXML structural parts (same styles as Maps export)
+    const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+
+    const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+    const workbookRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+    const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Leads" sheetId="1" r:id="rId1"/>
+    <sheet name="People" sheetId="2" r:id="rId2"/>
+  </sheets>
+</workbook>`;
+
+    // Reuse same styles as Maps export (copied verbatim for self-containment)
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1">
+    <numFmt numFmtId="164" formatCode="@"/>
+  </numFmts>
+  <fonts count="4">
+    <font><sz val="10"/><color rgb="FF0F172A"/><name val="Segoe UI"/></font>
+    <font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Segoe UI"/></font>
+    <font><u val="single"/><sz val="10"/><color rgb="FF0284C7"/><name val="Segoe UI"/></font>
+    <font><b/><sz val="10"/><color rgb="FF0F172A"/><name val="Segoe UI"/></font>
+  </fonts>
+  <fills count="4">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF7C3AED"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFC"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/></border>
+    <border>
+      <left style="thin"><color rgb="FFE2E8F0"/></left>
+      <right style="thin"><color rgb="FFE2E8F0"/></right>
+      <top style="thin"><color rgb="FFE2E8F0"/></top>
+      <bottom style="thin"><color rgb="FFE2E8F0"/></bottom>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="10">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+  </cellXfs>
+  <cellStyles count="1">
+    <cellStyle name="Normal" xfId="0" builtinId="0"/>
+  </cellStyles>
+</styleSheet>`;
+
+    const files = [
+      { name: "[Content_Types].xml", data: contentTypesXml },
+      { name: "_rels/.rels", data: rootRelsXml },
+      { name: "xl/_rels/workbook.xml.rels", data: workbookRelsXml },
+      { name: "xl/workbook.xml", data: workbookXml },
+      { name: "xl/styles.xml", data: stylesXml },
+      { name: "xl/worksheets/sheet1.xml", data: sheet1Xml },
+      { name: "xl/worksheets/sheet2.xml", data: sheet2Xml },
+    ];
+
+    return createZipArchive(files);
+  }
+
 });

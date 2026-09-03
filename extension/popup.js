@@ -180,6 +180,7 @@
     return str;
   }
 
+  // ─── MAPS CANONICAL CSV (24 columns — FROZEN, do not modify) ─────────────
   const CSV_HEADERS = [
     "Company", "Phone", "Website", "Email", "Email Status",
     "Address", "City", "State / Region", "Country", "Postal Code",
@@ -220,6 +221,60 @@
   function generateCSV(leads) {
     const valid = (leads || []).filter((l) => l && (l.company_name || l.website || l.email || l.phone));
     return "\uFEFF" + [CSV_HEADERS.join(","), ...valid.map(leadToCsvRow)].join("\r\n");
+  }
+
+  // ─── WEBSITE INTELLIGENCE EXTENDED CSV (social + people) ─────────────────
+  const WEBSITE_CSV_HEADERS = [
+    "Company", "Website", "Primary Email", "Additional Emails", "Email Status",
+    "Primary Phone", "Additional Phones",
+    "Address", "City", "State / Region", "Country", "Postal Code",
+    "Industry", "Description",
+    "LinkedIn", "Twitter / X", "Facebook", "Instagram", "YouTube", "GitHub",
+    "Booking URL", "Ordering URL", "Menu URL",
+    "Source URL", "Imported At", "Source Query"
+  ];
+
+  function websiteLeadToCsvRow(l) {
+    const social = l.social || {};
+    const extraEmails = Array.isArray(l.emails) && l.emails.length > 1
+      ? l.emails.slice(1).map((e) => e.email || e).join("; ")
+      : "";
+    const extraPhones = Array.isArray(l.phones) && l.phones.length > 1
+      ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
+      : "";
+    return [
+      escapeCsvCell(l.company_name || l.website || "—"),
+      escapeCsvCell(l.website),
+      escapeCsvCell(l.email),
+      escapeCsvCell(extraEmails),
+      escapeCsvCell(l.email_status),
+      escapeCsvCell(l.phone),
+      escapeCsvCell(extraPhones),
+      escapeCsvCell(l.address),
+      escapeCsvCell(l.city),
+      escapeCsvCell(l.region),
+      escapeCsvCell(l.country),
+      escapeCsvCell(l.postal_code),
+      escapeCsvCell(l.category),
+      escapeCsvCell(l.business_type || ""),
+      escapeCsvCell(social.linkedin || ""),
+      escapeCsvCell(social.twitter_x || ""),
+      escapeCsvCell(social.facebook || ""),
+      escapeCsvCell(social.instagram || ""),
+      escapeCsvCell(social.youtube || ""),
+      escapeCsvCell(social.github || ""),
+      escapeCsvCell(l.booking_url),
+      escapeCsvCell(l.ordering_url),
+      escapeCsvCell(l.menu_url),
+      escapeCsvCell(l.source_url),
+      escapeCsvCell(l.imported_at || new Date().toISOString()),
+      escapeCsvCell(l.sourceQuery)
+    ].join(",");
+  }
+
+  function generateWebsiteCSV(leads) {
+    const valid = (leads || []).filter((l) => l && (l.company_name || l.website || l.email || l.phone));
+    return "\uFEFF" + [WEBSITE_CSV_HEADERS.join(","), ...valid.map(websiteLeadToCsvRow)].join("\r\n");
   }
 
   function uint8ToDataUrl(uint8, mimeType) {
@@ -1012,19 +1067,34 @@
     try {
       const filename = getWebsiteExportFilename(currentWebLead, format);
       if (format === "xlsx") {
-        triggerXlsxDownload([currentWebLead], filename, (res) => {
+        // Use Website Intelligence extended XLSX builder (2-sheet: Leads + People, with social columns)
+        const XlsxBuilder = window.RamosXlsxBuilder || globalThis.RamosXlsxBuilder;
+        if (!XlsxBuilder || typeof XlsxBuilder.buildWebsiteXlsx !== "function") {
           isWebExporting = false;
-          if (res && res.ok) {
-            showToast(`Website lead exported to ${format.toUpperCase()}.`, "success");
-          } else {
-            showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
-          }
-        });
+          showToast("Export failed: XLSX builder unavailable.", "error");
+          return;
+        }
+        try {
+          const xlsxBytes = XlsxBuilder.buildWebsiteXlsx([currentWebLead]);
+          const dataUrl = uint8ToDataUrl(xlsxBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+          downloadDataUrl(dataUrl, filename, (res) => {
+            isWebExporting = false;
+            if (res && res.ok) {
+              showToast(`Website lead exported to XLSX (Leads + People sheets).`, "success");
+            } else {
+              showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+            }
+          });
+        } catch (err) {
+          isWebExporting = false;
+          showToast(`Export failed: ${err.message}`, "error");
+        }
       } else {
-        triggerCsvDownload(generateCSV([currentWebLead]), filename, (res) => {
+        // Use Website Intelligence extended CSV (26 columns with social URLs)
+        triggerCsvDownload(generateWebsiteCSV([currentWebLead]), filename, (res) => {
           isWebExporting = false;
           if (res && res.ok) {
-            showToast(`Website lead exported to ${format.toUpperCase()}.`, "success");
+            showToast(`Website lead exported to CSV (with social URLs).`, "success");
           } else {
             showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
           }
