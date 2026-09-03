@@ -24,6 +24,7 @@
     mapsStatusTitle: document.getElementById("mapsStatusTitle"),
     queryInfo: document.getElementById("queryInfo"),
     detectedInfo: document.getElementById("detectedInfo"),
+    openMapsBtn: document.getElementById("openMapsBtn"),
     importLimit: document.getElementById("importLimit"),
     extractBtn: document.getElementById("extractBtn"),
     stopBtn: document.getElementById("stopBtn"),
@@ -162,7 +163,11 @@
   // ─── GOOGLE MAPS CONTROLLER (FROZEN) ─────────────────────────────────────────
   function isGoogleMapsUrl(url) {
     if (!url || typeof url !== "string") return false;
-    return /^(https?:\/\/)?([a-z0-9-]+\.)*(google\.[a-z.]+|googleusercontent\.com)\/maps(\/|$|\?)/i.test(url.trim());
+    const trimmed = url.trim();
+    return (
+      /^(https?:\/\/)?([a-z0-9-]+\.)*(google\.[a-z.]+|googleusercontent\.com)\/maps(\/|$|\?)/i.test(trimmed) ||
+      /^(https?:\/\/)?maps\.google\.[a-z.]+(\/|$|\?)/i.test(trimmed)
+    );
   }
 
   function escapeCsvCell(val) {
@@ -279,15 +284,26 @@
             ? `${cardCount} result card${cardCount === 1 ? "" : "s"} found`
             : "No search results visible on map";
       }
+      if (el.openMapsBtn) el.openMapsBtn.classList.add("hidden");
       if (el.extractBtn) el.extractBtn.disabled = false;
     } else {
       el.mapsDot.className = "maps-dot red";
-      el.mapsStatusTitle.textContent = "Google Maps Not Found";
+      el.mapsStatusTitle.textContent = "Google Maps not detected";
       if (el.queryInfo) el.queryInfo.classList.add("hidden");
       if (el.detectedInfo) {
         el.detectedInfo.textContent = "Navigate to Google Maps search results to extract";
       }
+      if (el.openMapsBtn) el.openMapsBtn.classList.remove("hidden");
       if (el.extractBtn) el.extractBtn.disabled = true;
+    }
+  }
+
+  function openGoogleMapsTab() {
+    const mapsUrl = "https://www.google.com/maps/";
+    if (typeof chrome !== "undefined" && chrome.tabs && typeof chrome.tabs.create === "function") {
+      chrome.tabs.create({ url: mapsUrl, active: true });
+    } else if (typeof window !== "undefined" && typeof window.open === "function") {
+      window.open(mapsUrl, "_blank");
     }
   }
 
@@ -942,6 +958,7 @@
     el.tabWebsiteBtn?.addEventListener("click", () => setTabMode("website"));
 
     // Maps Actions
+    el.openMapsBtn?.addEventListener("click", () => openGoogleMapsTab());
     el.extractBtn?.addEventListener("click", () => startExtraction());
     el.stopBtn?.addEventListener("click", () => {
       chrome.runtime.sendMessage({ type: "SI_STOP_DISCOVERY" });

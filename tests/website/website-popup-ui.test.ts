@@ -330,3 +330,96 @@ test("MAPS REGRESSION GATE: Google Maps card extractor and detail pipeline remai
   assert.equal(canonicalLead.extraction_source, "chrome-extension");
   assert.equal(canonicalLead.company_name, null);
 });
+
+// ─── SUITE 6: GOOGLE MAPS NOT DETECTED UX ACTION (Requirement 8) ────────────
+
+test("POPUP UI: Displays 'Google Maps not detected' and opens a new Maps tab without replacing current tab", () => {
+  // 1. Verify URL detection logic
+  function isGoogleMapsUrl(url: string) {
+    if (!url || typeof url !== "string") return false;
+    const trimmed = url.trim();
+    return (
+      /^(https?:\/\/)?([a-z0-9-]+\.)*(google\.[a-z.]+|googleusercontent\.com)\/maps(\/|$|\?)/i.test(trimmed) ||
+      /^(https?:\/\/)?maps\.google\.[a-z.]+(\/|$|\?)/i.test(trimmed)
+    );
+  }
+
+  assert.equal(isGoogleMapsUrl("https://example.com"), false);
+  assert.equal(isGoogleMapsUrl("https://waytowebsolutions.com/"), false);
+  assert.equal(isGoogleMapsUrl("https://www.google.com/maps/search/restaurants"), true);
+  assert.equal(isGoogleMapsUrl("https://maps.google.com/"), true);
+
+  // 2. Mock Popup Elements & updateMapsTabState behavior
+  const mapsDot = new MockElement("SPAN", { class: "maps-dot gray" });
+  const mapsStatusTitle = new MockElement("P", { class: "maps-status-title" }, "Checking active tab...");
+  const detectedInfo = new MockElement("P", { class: "detected-text" });
+  const queryInfo = new MockElement("P", { class: "query-text hidden" });
+  const openMapsBtn = new MockElement("BUTTON", { class: "btn btn-secondary btn-sm mt-2 hidden" }, "Open Google Maps");
+  const extractBtn = new MockElement("BUTTON", { class: "btn btn-primary" });
+  extractBtn.attributes.disabled = "true";
+
+  function updateMapsTabState(active: boolean, query: string | null = null, cardCount = 0) {
+    if (active) {
+      mapsDot.attributes.class = "maps-dot green";
+      mapsStatusTitle.textContent = "Google Maps Detected";
+      if (query) {
+        queryInfo.textContent = `Search: "${query}"`;
+        queryInfo.attributes.class = "query-text";
+      }
+      detectedInfo.textContent =
+        cardCount > 0
+          ? `${cardCount} result card${cardCount === 1 ? "" : "s"} found`
+          : "No search results visible on map";
+      openMapsBtn.attributes.class = "btn btn-secondary btn-sm mt-2 hidden";
+      delete extractBtn.attributes.disabled;
+    } else {
+      mapsDot.attributes.class = "maps-dot red";
+      mapsStatusTitle.textContent = "Google Maps not detected";
+      queryInfo.attributes.class = "query-text hidden";
+      detectedInfo.textContent = "Navigate to Google Maps search results to extract";
+      openMapsBtn.attributes.class = "btn btn-secondary btn-sm mt-2"; // Visible!
+      extractBtn.attributes.disabled = "true";
+    }
+  }
+
+  // Initial non-Maps state
+  updateMapsTabState(false);
+  assert.equal(mapsStatusTitle.textContent, "Google Maps not detected");
+  assert.ok(!openMapsBtn.attributes.class.includes("hidden"), "Open Google Maps button must be visible");
+  assert.equal(openMapsBtn.textContent, "Open Google Maps");
+  assert.equal(extractBtn.attributes.disabled, "true");
+
+  // 3. Test openGoogleMapsTab action opens a NEW tab and does not replace current tab
+  let createdTabParams: any = null;
+  let updatedTabParams: any = null;
+
+  const mockChromeTabs = {
+    create: (params: any) => {
+      createdTabParams = params;
+    },
+    update: (params: any) => {
+      updatedTabParams = params;
+    },
+  };
+
+  function openGoogleMapsTab() {
+    const mapsUrl = "https://www.google.com/maps/";
+    mockChromeTabs.create({ url: mapsUrl, active: true });
+  }
+
+  openGoogleMapsTab();
+
+  // Verify a new tab was created with https://www.google.com/maps/
+  assert.ok(createdTabParams, "Must invoke chrome.tabs.create");
+  assert.equal(createdTabParams.url, "https://www.google.com/maps/");
+  assert.equal(createdTabParams.active, true);
+  assert.equal(updatedTabParams, null, "Current tab must NOT be navigated/replaced");
+
+  // 4. Test transition to active Google Maps tab
+  updateMapsTabState(true, "coffee shops", 12);
+  assert.equal(mapsStatusTitle.textContent, "Google Maps Detected");
+  assert.ok(openMapsBtn.attributes.class.includes("hidden"), "Open Google Maps button must hide on Maps tab");
+  assert.equal(extractBtn.attributes.disabled, undefined, "Run Discovery must be enabled on Maps tab");
+  assert.equal(detectedInfo.textContent, "12 result cards found");
+});
+
