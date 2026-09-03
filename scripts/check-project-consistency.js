@@ -31,6 +31,21 @@ const requiredDocs = [
   'docs/RAMOS_EXPORT_SPECIFICATION.md',
   'docs/RAMOS_STABLE_BASELINE.md',
   'docs/chrome-extension.md',
+  'docs/RAMOS_WEBSITE_ARCHITECTURE.md',
+  'docs/RAMOS_WEBSITE_EXTRACTION_RULES.md',
+  'docs/RAMOS_WEBSITE_ROADMAP.md',
+  'docs/RAMOS_WEBSITE_SECURITY.md',
+  'docs/RAMOS_WEBSITE_FIELD_SPECIFICATION.md',
+  'docs/RAMOS_WEBSITE_PHASE_0_REPORT.md',
+  'docs/RAMOS_WEBSITE_PHASE_1_REPORT.md',
+  'docs/RAMOS_WEBSITE_PHASE_2_REPORT.md',
+  'docs/RAMOS_WEBSITE_PHASE_3_REPORT.md',
+  'docs/RAMOS_WEBSITE_PHASE_4_REPORT.md',
+  'docs/RAMOS_WEBSITE_PHASE_5_REPORT.md',
+  'docs/RAMOS_WEBSITE_PHASE_6_REPORT.md',
+  'docs/RAMOS_FINAL_RELEASE_AUDIT.md',
+  'docs/RAMOS_WEBSITE_SCRAPER_PHASE_0_1_AUDIT.md',
+  'RAMOS_FINAL_ARCHITECTURE.md',
 ];
 
 console.log('--- 1. Checking Documentation Infrastructure ---');

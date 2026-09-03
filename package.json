@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/maps/*.test.ts",
+    "test": "node --test tests/maps/*.test.ts tests/website/*.test.ts",
     "package:extension": "node scripts/extension-package.js",
     "check:consistency": "node scripts/check-project-consistency.js",
     "lint": "eslint .",

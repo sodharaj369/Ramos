@@ -8,7 +8,9 @@
   "host_permissions": [
     "https://www.google.com/maps*",
     "https://*.google.com/maps*",
-    "https://maps.google.com/*"
+    "https://maps.google.com/*",
+    "http://*/*",
+    "https://*/*"
   ],
   "background": { "service_worker": "background.js" },
   "action": {
@@ -57,6 +59,20 @@
         "popup.js",
         "popup.css",
         "shared/xlsx-builder.js",
+        "content/website/page-acquisition.js",
+        "content/website/normalizers.js",
+        "content/website/validators.js",
+        "content/website/page-analyzer.js",
+        "content/website/structured-data.js",
+        "content/website/field-extractors.js",
+        "content/website/crawl-policy.js",
+        "content/website/page-priority.js",
+        "content/website/link-discovery.js",
+        "content/website/crawl-queue.js",
+        "content/website/people-extractor.js",
+        "content/website/confidence.js",
+        "content/website/enricher.js",
+        "content/website/website-adapter.js",
         "assets/ramos-icon-16.png",
         "assets/ramos-icon-32.png",
         "assets/ramos-icon-48.png",

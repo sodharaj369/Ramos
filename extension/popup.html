@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>RAMOS – Maps Lead Extractor</title>
+  <title>RAMOS – Maps &amp; Website Intelligence</title>
   <link rel="icon" type="image/png" href="assets/ramos-icon-32.png">
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -13,100 +13,252 @@
       <div class="brand">
         <span class="logo-icon"><img src="assets/ramos-icon-32.png" width="20" height="20" alt="RAMOS" style="vertical-align: middle; border-radius: 4px;"></span>
         <span class="brand-name">RAMOS</span>
-        <span class="brand-sub">MAPS LEAD EXTRACTOR</span>
+        <span class="brand-sub">LEAD INTELLIGENCE</span>
         <span id="extVersion" class="version-tag">v1.0.5</span>
       </div>
       <span class="badge badge-local">STANDALONE</span>
     </div>
 
+    <!-- Mode Tabs -->
+    <div class="mode-tabs">
+      <button id="tabMapsBtn" class="tab-btn active" data-tab="maps">Google Maps</button>
+      <button id="tabWebsiteBtn" class="tab-btn" data-tab="website">Website Intelligence</button>
+    </div>
+
     <!-- Feedback Toast / Banner -->
     <div id="exportToast" class="toast-banner hidden"></div>
 
-    <!-- 1. Google Maps Tab Detection -->
-    <div class="card maps-card">
-      <div class="card-header-compact">
-        <span id="mapsDot" class="maps-dot gray"></span>
-        <span class="card-title-sm">GOOGLE MAPS</span>
+    <!-- ==================== GOOGLE MAPS PANEL ==================== -->
+    <div id="mapsPanel" class="panel-view">
+      <!-- 1. Google Maps Tab Detection -->
+      <div class="card maps-card">
+        <div class="card-header-compact">
+          <span id="mapsDot" class="maps-dot gray"></span>
+          <span class="card-title-sm">GOOGLE MAPS</span>
+        </div>
+        <div class="card-body-compact">
+          <p id="mapsStatusTitle" class="maps-status-title">Checking active tab...</p>
+          <p id="queryInfo" class="query-text hidden"></p>
+          <p id="detectedInfo" class="detected-text"></p>
+        </div>
       </div>
-      <div class="card-body-compact">
-        <p id="mapsStatusTitle" class="maps-status-title">Checking active tab...</p>
-        <p id="queryInfo" class="query-text hidden"></p>
-        <p id="detectedInfo" class="detected-text"></p>
+
+      <!-- 2. Search Result Cards & Extraction Controls -->
+      <div class="card mode-card">
+        <div class="card-title">SEARCH RESULT CARDS</div>
+
+        <div class="form-group">
+          <label for="importLimit">Maximum results</label>
+          <select id="importLimit" class="form-select">
+            <option value="5">5 results</option>
+            <option value="10" selected>10 results</option>
+            <option value="20">20 results</option>
+            <option value="30">30 results</option>
+            <option value="50">50 results</option>
+          </select>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="actions-primary">
+          <button id="extractBtn" class="btn btn-primary" disabled>Run Discovery</button>
+          <button id="stopBtn" class="btn btn-danger hidden">Stop Extraction</button>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progressContainer" class="progress-section hidden">
+          <div class="progress-bar-bg">
+            <div id="progressBar" class="progress-bar-fill"></div>
+          </div>
+          <p id="progressText" class="progress-text">Initiating discovery &amp; automatic enrichment...</p>
+        </div>
+
+        <!-- Current Business Live Enrichment Indicator -->
+        <div id="currentBizCard" class="card current-biz-card hidden">
+          <div class="card-title-sm">CURRENT BUSINESS</div>
+          <p id="currentBizName" class="current-biz-name">—</p>
+          <div id="currentBizFields" class="current-biz-fields">
+            <span id="fieldAddress" class="biz-field gray">Full Address</span>
+            <span id="fieldPhone" class="biz-field gray">Phone</span>
+            <span id="fieldWebsite" class="biz-field gray">Website</span>
+            <span id="fieldRating" class="biz-field gray">Rating</span>
+            <span id="fieldHours" class="biz-field gray">Opening Hours</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Summary Card (Completed Discovery & Exports) -->
+      <div id="resultSummary" class="card summary-card hidden">
+        <div class="summary-header">
+          <span id="summaryTitle" class="summary-title">Discovery Complete</span>
+        </div>
+
+        <div id="discoveryStatsGrid" class="stats-grid">
+          <div class="stat-item"><span class="stat-label">Discovered</span><span id="statDiscovered" class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Qualified</span><span id="statQualified" class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Enriched</span><span id="statEnriched" class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Failed</span><span id="statFailed" class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Duplicates</span><span id="statDuplicates" class="stat-val">0</span></div>
+          <div class="stat-item highlight"><span class="stat-label">Ready</span><span id="statReady" class="stat-val">0</span></div>
+        </div>
+
+        <!-- Website Enrichment Subsystem (Phase 6) -->
+        <div id="enrichSection" class="enrich-section mt-2">
+          <div class="enrich-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span id="enrichStatusInfo" class="enrich-status-info" style="font-size: 11px; color: #94a3b8;">0 leads with websites</span>
+            <button id="enrichWebsitesBtn" class="btn btn-enrich" type="button">Enrich Websites</button>
+            <button id="stopEnrichBtn" class="btn btn-danger hidden" type="button">Stop Enrichment</button>
+          </div>
+          <div id="enrichProgressContainer" class="progress-section hidden" style="margin-top: 6px;">
+            <div class="progress-bar-bg">
+              <div id="enrichProgressBar" class="progress-bar-fill"></div>
+            </div>
+            <p id="enrichProgressText" class="progress-text" style="font-size: 10px; margin-top: 4px;">Enriching websites...</p>
+            <div id="enrichMetricsRow" class="web-metrics-row">
+              <span>✓ Enriched: <strong id="enrichMetricCount">0</strong></span>
+              <span>↷ Skipped: <strong id="enrichMetricSkipped">0</strong></span>
+              <span>⚠ Failed: <strong id="enrichMetricFailed">0</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions-stacked mt-2">
+          <button id="downloadXlsxBtn" class="btn btn-primary btn-excel" disabled>Download Excel (.xlsx)</button>
+          <button id="downloadCsvBtn" class="btn btn-secondary" disabled>Download CSV (.csv)</button>
+        </div>
       </div>
     </div>
 
-    <!-- 2. Search Result Cards & Extraction Controls -->
-    <div class="card mode-card">
-      <div class="card-title">SEARCH RESULT CARDS</div>
+    <!-- ==================== WEBSITE INTELLIGENCE PANEL ==================== -->
+    <div id="websitePanel" class="panel-view hidden">
+      <!-- 1. Target Website URL & Setup -->
+      <div class="card mode-card">
+        <div class="card-title">WEBSITE INTELLIGENCE</div>
 
-      <div class="form-group">
-        <label for="importLimit">Maximum results</label>
-        <select id="importLimit" class="form-select">
-          <option value="5">5 results</option>
-          <option value="10" selected>10 results</option>
-          <option value="20">20 results</option>
-          <option value="30">30 results</option>
-          <option value="50">50 results</option>
-        </select>
-      </div>
-
-      <!-- Action Buttons -->
-      <div class="actions-primary">
-        <button id="extractBtn" class="btn btn-primary" disabled>Run Discovery</button>
-        <button id="stopBtn" class="btn btn-danger hidden">Stop Extraction</button>
-      </div>
-
-      <!-- Progress Section -->
-      <div id="progressContainer" class="progress-section hidden">
-        <div class="progress-bar-bg">
-          <div id="progressBar" class="progress-bar-fill"></div>
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="webUrlInput" style="margin-bottom: 0;">Target Website</label>
+            <button id="webUseActiveTabBtn" class="btn-link" type="button">Use current tab</button>
+          </div>
+          <input id="webUrlInput" type="url" class="form-input" placeholder="https://example.com" />
         </div>
-        <p id="progressText" class="progress-text">Initiating discovery &amp; automatic enrichment...</p>
-      </div>
 
-      <!-- Current Business Live Enrichment Indicator -->
-      <div id="currentBizCard" class="card current-biz-card hidden">
-        <div class="card-title-sm">CURRENT BUSINESS</div>
-        <p id="currentBizName" class="current-biz-name">—</p>
-        <div id="currentBizFields" class="current-biz-fields">
-          <span id="fieldAddress" class="biz-field gray">Full Address</span>
-          <span id="fieldPhone" class="biz-field gray">Phone</span>
-          <span id="fieldWebsite" class="biz-field gray">Website</span>
-          <span id="fieldRating" class="biz-field gray">Rating</span>
-          <span id="fieldHours" class="biz-field gray">Opening Hours</span>
+        <!-- Scope Filters -->
+        <div class="form-group">
+          <label>Extraction Scope</label>
+          <div class="scope-tags">
+            <label class="scope-checkbox"><input type="checkbox" id="scopeCompany" checked /> <span>Company</span></label>
+            <label class="scope-checkbox"><input type="checkbox" id="scopeContact" checked /> <span>Contact</span></label>
+            <label class="scope-checkbox"><input type="checkbox" id="scopeSocial" checked /> <span>Social</span></label>
+            <label class="scope-checkbox"><input type="checkbox" id="scopePeople" checked /> <span>People</span></label>
+          </div>
+        </div>
+
+        <!-- Crawl Limit -->
+        <div class="form-group">
+          <label for="webCrawlLimit">Crawl Depth &amp; Page Limit</label>
+          <select id="webCrawlLimit" class="form-select">
+            <option value="1">1 page (Single page)</option>
+            <option value="5">5 pages (Focused scan)</option>
+            <option value="10" selected>10 pages (Standard crawl)</option>
+            <option value="20">20 pages (Deep crawl)</option>
+          </select>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="actions-primary">
+          <button id="webAnalyzeBtn" class="btn btn-primary">Analyze Website</button>
+          <button id="webStopBtn" class="btn btn-danger hidden">Stop Crawling</button>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="webProgressContainer" class="progress-section hidden">
+          <div class="progress-bar-bg">
+            <div id="webProgressBar" class="progress-bar-fill"></div>
+          </div>
+          <p id="webProgressText" class="progress-text">Initializing targeted crawler...</p>
+          <div id="webProgressMetrics" class="web-metrics-row">
+            <span>Discovered: <strong id="webMetricDiscovered">0</strong></span>
+            <span>Scanned: <strong id="webMetricScanned">0</strong></span>
+            <span>People: <strong id="webMetricPeople">0</strong></span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 3. Summary Card (Completed Discovery & Exports) -->
-    <div id="resultSummary" class="card summary-card hidden">
-      <div class="summary-header">
-        <span id="summaryTitle" class="summary-title">Discovery Complete</span>
-      </div>
+      <!-- 2. Results Summary Card -->
+      <div id="webResultSummary" class="card summary-card hidden">
+        <div class="summary-header">
+          <span id="webSummaryTitle" class="summary-title">Extraction Complete</span>
+          <span id="webConfidenceBadge" class="confidence-badge">High Confidence</span>
+        </div>
 
-      <div id="discoveryStatsGrid" class="stats-grid">
-        <div class="stat-item"><span class="stat-label">Discovered</span><span id="statDiscovered" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Qualified</span><span id="statQualified" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Enriched</span><span id="statEnriched" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Failed</span><span id="statFailed" class="stat-val">0</span></div>
-        <div class="stat-item"><span class="stat-label">Duplicates</span><span id="statDuplicates" class="stat-val">0</span></div>
-        <div class="stat-item highlight"><span class="stat-label">Ready</span><span id="statReady" class="stat-val">0</span></div>
-      </div>
+        <div class="web-lead-details">
+          <div class="lead-field-row">
+            <span class="lead-label">Company:</span>
+            <span id="webLeadCompany" class="lead-val">—</span>
+          </div>
+          <div class="lead-field-row">
+            <span class="lead-label">Email:</span>
+            <span id="webLeadEmail" class="lead-val">—</span>
+          </div>
+          <div class="lead-field-row">
+            <span class="lead-label">Phone:</span>
+            <span id="webLeadPhone" class="lead-val">—</span>
+          </div>
+          <div class="lead-field-row">
+            <span class="lead-label">Address:</span>
+            <span id="webLeadAddress" class="lead-val">—</span>
+          </div>
+          <div class="lead-field-row">
+            <span class="lead-label">Social:</span>
+            <div id="webLeadSocial" class="social-pills"></div>
+          </div>
+        </div>
 
-      <div class="actions-stacked mt-2">
-        <button id="downloadXlsxBtn" class="btn btn-primary btn-excel" disabled>Download Excel (.xlsx)</button>
-        <button id="downloadCsvBtn" class="btn btn-secondary" disabled>Download CSV (.csv)</button>
+        <!-- People Section -->
+        <div id="webPeopleSection" class="web-people-box hidden">
+          <div class="people-box-header">
+            <span>Leadership &amp; Team (<span id="webPeopleCount">0</span>)</span>
+          </div>
+          <div id="webPeopleList" class="people-list"></div>
+        </div>
+
+        <!-- Transparent Evidence Inspection -->
+        <details id="webEvidenceDetails" class="evidence-details">
+          <summary>Why this value? (Evidence &amp; Confidence)</summary>
+          <div id="webEvidenceContent" class="evidence-content"></div>
+        </details>
+
+        <!-- Export Buttons -->
+        <div class="actions-stacked mt-2">
+          <button id="webDownloadXlsxBtn" class="btn btn-primary btn-excel">Download Excel (.xlsx)</button>
+          <button id="webDownloadCsvBtn" class="btn btn-secondary">Download CSV (.csv)</button>
+        </div>
       </div>
     </div>
 
     <!-- 4. Footer -->
     <div class="footer-links" style="justify-content: center; font-size: 11px; color: #94a3b8; padding-top: 4px;">
-      <span>RAMOS – Maps Lead Extractor</span>
+      <span>RAMOS – Lead Intelligence</span>
     </div>
   </div>
 
   <script src="shared/constants.js"></script>
+  <script src="shared/schema.js"></script>
   <script src="shared/xlsx-builder.js"></script>
+  <script src="content/website/page-acquisition.js"></script>
+  <script src="content/website/normalizers.js"></script>
+  <script src="content/website/validators.js"></script>
+  <script src="content/website/page-analyzer.js"></script>
+  <script src="content/website/structured-data.js"></script>
+  <script src="content/website/field-extractors.js"></script>
+  <script src="content/website/crawl-policy.js"></script>
+  <script src="content/website/page-priority.js"></script>
+  <script src="content/website/link-discovery.js"></script>
+  <script src="content/website/crawl-queue.js"></script>
+  <script src="content/website/people-extractor.js"></script>
+  <script src="content/website/confidence.js"></script>
+  <script src="content/website/enricher.js"></script>
+  <script src="content/website/website-adapter.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

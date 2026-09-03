@@ -207,7 +207,7 @@
   }
 
   function buildXlsx(leads) {
-    const validLeads = (leads || []).filter((l) => l && l.company_name);
+    const validLeads = (leads || []).filter((l) => l && (l.company_name || l.website || l.email || l.phone));
     const now = new Date().toISOString();
 
     const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -322,7 +322,7 @@
       const isOdd = r % 2 !== 0;
 
       const values = [
-        { v: lead.company_name, spec: COLUMN_SPECS[0] },
+        { v: lead.company_name || lead.website || "—", spec: COLUMN_SPECS[0] },
         { v: lead.phone, spec: COLUMN_SPECS[1] },
         { v: lead.website, spec: COLUMN_SPECS[2] },
         { v: lead.email, spec: COLUMN_SPECS[3] },

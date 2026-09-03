@@ -125,6 +125,20 @@ function packageExtension() {
     "content/maps/result-card-extractor.js",
     "content/maps/detail-extractor.js",
     "content/maps/maps-adapter.js",
+    "content/website/page-acquisition.js",
+    "content/website/normalizers.js",
+    "content/website/validators.js",
+    "content/website/page-analyzer.js",
+    "content/website/structured-data.js",
+    "content/website/field-extractors.js",
+    "content/website/crawl-policy.js",
+    "content/website/page-priority.js",
+    "content/website/link-discovery.js",
+    "content/website/crawl-queue.js",
+    "content/website/people-extractor.js",
+    "content/website/confidence.js",
+    "content/website/enricher.js",
+    "content/website/website-adapter.js",
   ];
 
   // Validate manifest script references
