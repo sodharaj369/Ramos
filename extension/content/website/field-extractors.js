@@ -39,6 +39,9 @@
     // 1. Anchor Protocol Extraction (mailto: and tel:)
     extractAnchorProtocols(doc, pageUrl, candidates);
 
+    // 1b. Cloudflare Protected Emails (publicly embedded tokens decoded via XOR)
+    extractCloudflareEmails(doc, pageUrl, candidates);
+
     // 2. Social Media & Action Links
     extractSocialAndActionLinks(doc, pageUrl, candidates);
 
@@ -91,6 +94,72 @@
           confidence: 0.95,
           raw_snippet: rawHref,
         });
+      }
+    }
+  }
+
+  /**
+   * Decodes a Cloudflare Email Protection hex string via XOR bitwise decoding.
+   * @param {string} hexStr
+   * @returns {string|null}
+   */
+  function decodeCloudflareHex(hexStr) {
+    if (!hexStr || typeof hexStr !== "string" || hexStr.length < 4) return null;
+    try {
+      const key = parseInt(hexStr.substr(0, 2), 16);
+      let email = "";
+      for (let n = 2; n < hexStr.length; n += 2) {
+        const byte = parseInt(hexStr.substr(n, 2), 16);
+        email += String.fromCharCode(byte ^ key);
+      }
+      return email.trim();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extracts publicly embedded Cloudflare-obfuscated emails from DOM elements.
+   */
+  function extractCloudflareEmails(doc, pageUrl, candidates) {
+    // 1. Anchors with href containing /cdn-cgi/l/email-protection#
+    const cfLinks = doc.querySelectorAll('a[href*="/cdn-cgi/l/email-protection#"]');
+    for (let i = 0; i < cfLinks.length; i++) {
+      const href = cfLinks[i].getAttribute("href") || "";
+      const hashPart = href.split("#")[1];
+      if (hashPart) {
+        const decoded = decodeCloudflareHex(hashPart);
+        if (decoded && decoded.includes("@")) {
+          candidates.push({
+            field: "email",
+            value: decoded,
+            source: "cloudflare-decoded",
+            evidence_type: "anchor-cf-protection",
+            page_url: pageUrl,
+            confidence: 0.95,
+            raw_snippet: href,
+          });
+        }
+      }
+    }
+
+    // 2. Elements with data-cfemail attribute
+    const cfElements = doc.querySelectorAll("[data-cfemail]");
+    for (let i = 0; i < cfElements.length; i++) {
+      const hex = cfElements[i].getAttribute("data-cfemail") || "";
+      if (hex) {
+        const decoded = decodeCloudflareHex(hex);
+        if (decoded && decoded.includes("@")) {
+          candidates.push({
+            field: "email",
+            value: decoded,
+            source: "cloudflare-decoded",
+            evidence_type: "attr-cf-protection",
+            page_url: pageUrl,
+            confidence: 0.95,
+            raw_snippet: hex,
+          });
+        }
       }
     }
   }

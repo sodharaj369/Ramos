@@ -22,6 +22,7 @@
       require("./crawl-queue.js"),
       require("./people-extractor.js"),
       require("./confidence.js"),
+      require("./lead-scorer.js"),
       require("../../shared/schema.js")
     );
   } else {
@@ -39,6 +40,7 @@
       root.RamosCrawlQueue || g.RamosCrawlQueue,
       root.RamosPeopleExtractor || g.RamosPeopleExtractor,
       root.RamosConfidence || g.RamosConfidence,
+      root.RamosLeadScorer || g.RamosLeadScorer,
       root.RamosSchema || root.SalesIntelSchema || g.RamosSchema || g.SalesIntelSchema
     );
     if (g && !g.RamosWebsiteAdapter) {
@@ -58,6 +60,7 @@
   CrawlQueueModule,
   PeopleExtractor,
   Confidence,
+  LeadScorer,
   Schema
 ) {
   "use strict";
@@ -303,6 +306,10 @@
       }
     }
 
+    if (visitedPagesMeta.length === 0) {
+      return null;
+    }
+
     // Resolve best candidates across all crawled pages using deterministic Confidence Engine
     const resolvedFinal = Confidence && typeof Confidence.resolveAllCandidates === "function"
       ? Confidence.resolveAllCandidates(allEvidence)
@@ -531,15 +538,28 @@
     if (bestCandidates.price_range) lead.price_range = bestCandidates.price_range.value;
 
     const discoveredSocial = {};
-    if (bestCandidates.linkedin && bestCandidates.linkedin.value) discoveredSocial.linkedin = bestCandidates.linkedin.value;
-    if (bestCandidates.twitter_x && bestCandidates.twitter_x.value) discoveredSocial.twitter_x = bestCandidates.twitter_x.value;
-    if (bestCandidates.facebook && bestCandidates.facebook.value) discoveredSocial.facebook = bestCandidates.facebook.value;
-    if (bestCandidates.instagram && bestCandidates.instagram.value) discoveredSocial.instagram = bestCandidates.instagram.value;
-    if (bestCandidates.youtube && bestCandidates.youtube.value) discoveredSocial.youtube = bestCandidates.youtube.value;
-    if (bestCandidates.github && bestCandidates.github.value) discoveredSocial.github = bestCandidates.github.value;
+    if (bestCandidates.linkedin && bestCandidates.linkedin.value) discoveredSocial.linkedin = Validators.normalizeSocialUrl ? Validators.normalizeSocialUrl(bestCandidates.linkedin.value, "linkedin") : bestCandidates.linkedin.value;
+    if (bestCandidates.twitter_x && bestCandidates.twitter_x.value) discoveredSocial.twitter_x = Validators.normalizeSocialUrl ? Validators.normalizeSocialUrl(bestCandidates.twitter_x.value, "twitter") : bestCandidates.twitter_x.value;
+    if (bestCandidates.facebook && bestCandidates.facebook.value) discoveredSocial.facebook = Validators.normalizeSocialUrl ? Validators.normalizeSocialUrl(bestCandidates.facebook.value, "facebook") : bestCandidates.facebook.value;
+    if (bestCandidates.instagram && bestCandidates.instagram.value) discoveredSocial.instagram = Validators.normalizeSocialUrl ? Validators.normalizeSocialUrl(bestCandidates.instagram.value, "instagram") : bestCandidates.instagram.value;
+    if (bestCandidates.youtube && bestCandidates.youtube.value) discoveredSocial.youtube = Validators.normalizeSocialUrl ? Validators.normalizeSocialUrl(bestCandidates.youtube.value, "youtube") : bestCandidates.youtube.value;
+    if (bestCandidates.github && bestCandidates.github.value) discoveredSocial.github = Validators.normalizeSocialUrl ? Validators.normalizeSocialUrl(bestCandidates.github.value, "github") : bestCandidates.github.value;
     lead.social = discoveredSocial;
 
-    lead.people = Array.isArray(meta.people) ? meta.people : [];
+    const rawPeople = Array.isArray(meta.people) ? meta.people : [];
+    lead.people = PeopleExtractor && typeof PeopleExtractor.rankPeopleBySeniority === "function"
+      ? PeopleExtractor.rankPeopleBySeniority(rawPeople)
+      : rawPeople;
+    lead.people_count = lead.people.length;
+
+    const primaryDm = PeopleExtractor && typeof PeopleExtractor.selectPrimaryDecisionMaker === "function"
+      ? PeopleExtractor.selectPrimaryDecisionMaker(lead.people)
+      : (lead.people[0] || null);
+
+    lead.decision_maker_name = primaryDm ? primaryDm.name : null;
+    lead.decision_maker_title = primaryDm ? (primaryDm.title || null) : null;
+    lead.decision_maker_email = primaryDm ? (primaryDm.email || null) : null;
+    lead.decision_maker_linkedin = primaryDm ? (primaryDm.linkedin_url || null) : null;
 
     // ─── AGGREGATE ALL VALID CORPORATE EMAILS (Preserve All Evidence) ────────
     const employeeEmails = new Set(
@@ -558,9 +578,11 @@
 
     // Primary email if present and not belonging to an employee
     if (lead.email) {
+      const evalBest = Validators.evaluateEmail ? Validators.evaluateEmail(lead.email, websiteDomain) : {};
       emailMap.set(lead.email.toLowerCase().trim(), {
         email: lead.email,
-        type: lead.email_status || "business_role",
+        type: lead.email_status || evalBest.classification || "business_role",
+        emailRole: evalBest.emailRole || "general",
         confidence: bestCandidates.email?.confidence ?? 0.90,
         sourceUrl: bestCandidates.email?.page_url || url,
         sourceType: bestCandidates.email?.source || "mailto",
@@ -584,6 +606,7 @@
       const candObj = {
         email: normalized,
         type: cand.classification || evalResult.classification || "business_role",
+        emailRole: evalResult.emailRole || cand.emailRole || "general",
         confidence: typeof cand.confidence === "number" ? cand.confidence : 0.70,
         sourceUrl: cand.page_url || cand.sourceUrl || url,
         sourceType: cand.source || cand.sourceType || "mailto",
@@ -593,14 +616,33 @@
         emailMap.set(lower, candObj);
       } else {
         const existing = emailMap.get(lower);
+        if (!existing.emailRole && candObj.emailRole) {
+          existing.emailRole = candObj.emailRole;
+        }
         if (candObj.confidence > existing.confidence) {
-          emailMap.set(lower, candObj);
+          emailMap.set(lower, { ...existing, ...candObj });
         }
       }
     }
 
-    lead.emails = Array.from(emailMap.values()).sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-    if (!lead.email && lead.emails.length > 0) {
+    function getEmailRolePriority(role) {
+      switch (role) {
+        case "sales": return 0.15;
+        case "general": return 0.08;
+        case "support": return 0.02;
+        case "marketing": return -0.02;
+        case "careers": return -0.10;
+        default: return 0.00;
+      }
+    }
+
+    lead.emails = Array.from(emailMap.values()).sort((a, b) => {
+      const scoreA = (a.confidence || 0) + getEmailRolePriority(a.emailRole);
+      const scoreB = (b.confidence || 0) + getEmailRolePriority(b.emailRole);
+      return scoreB - scoreA;
+    });
+
+    if (lead.emails.length > 0) {
       lead.email = lead.emails[0].email;
       lead.email_status = lead.emails[0].type;
     }
@@ -692,6 +734,21 @@
       queueStats: meta.queueStats || null,
     };
 
+    // Compute Lead Score (0-100) & Quality Tier (Phase 8A)
+    const Scorer = LeadScorer || (typeof root !== "undefined" && root.RamosLeadScorer) || (typeof globalThis !== "undefined" ? globalThis.RamosLeadScorer : null);
+    if (Scorer && typeof Scorer.computeLeadScore === "function") {
+      const scoreRes = Scorer.computeLeadScore(lead);
+      lead.lead_score = scoreRes.score;
+      lead.quality_tier = scoreRes.tier;
+      lead._provenance = {
+        ...(lead._provenance || {}),
+        lead_score: scoreRes.breakdown,
+      };
+    } else {
+      lead.lead_score = 0;
+      lead.quality_tier = "LOW";
+    }
+
     return lead;
   }
 
@@ -712,5 +769,6 @@
     crawlWebsite,
     selectBestCandidates,
     extractPageCandidates,
+    buildCanonicalLead,
   };
 });

@@ -118,6 +118,7 @@ function packageExtension() {
     "shared/constants.js",
     "shared/schema.js",
     "shared/xlsx-builder.js",
+    "shared/deduplicator.js",
     "content/maps/dom-utils.js",
     "content/maps/selectors.js",
     "content/maps/validators.js",
@@ -137,6 +138,7 @@ function packageExtension() {
     "content/website/crawl-queue.js",
     "content/website/people-extractor.js",
     "content/website/confidence.js",
+    "content/website/lead-scorer.js",
     "content/website/enricher.js",
     "content/website/website-adapter.js",
   ];

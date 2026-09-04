@@ -1,8 +1,20 @@
-# RAMOS – Maps Lead Extractor (v1.0.5)
+# Sales Intelligence — Lead Management & Maps Extraction
 
-A standalone Manifest V3 Chrome Extension for Google Maps lead extraction, sequential detail-panel enrichment, canonical lead normalization, and local CSV export.
+An internal sales intelligence web application for lead discovery, deduplication, CSV import/export, email verification, and sales signal tracking.
 
-RAMOS runs completely inside the user's browser without external API servers, backend databases, or third-party web application dependencies.
+Built with **TanStack Start** (React 19, Vite 8, Tailwind v4) + **Supabase / Lovable Cloud backend** (Postgres, Auth, RLS, Storage).
+
+---
+
+## Current Product Status
+
+| Component | Architecture | Status |
+| :--- | :--- | :--- |
+| **Sales Intel Web App** | TanStack Start + Supabase | **Active** — Lead table, deduplication, verification history, job management. |
+| **Google Maps Discovery** | Browser Chrome Extension (**v1.0.16**) | **Active** — Extracts public Google Maps details directly in the user's Chrome browser. No hosted scraper required. |
+| **Built-in Email Verifier** | Server-side validation | **Active** — Syntax, DNS, MX, disposable domain, and role-account checks. |
+| **External Email Verifier** | Standalone Go service (`email-verifier-service`) | **Available** — Optional microservice for deep SMTP reachability checks. |
+| **Self-Hosted Server Scraper** | Headless Chromium Docker service | **Future / Optional** — Server-side scraper container architecture for headless discovery. |
 
 ---
 
@@ -27,7 +39,7 @@ RAMOS runs completely inside the user's browser without external API servers, ba
 ## Testing & Packaging
 
 - **Run Unit Tests**: `npm test`
-- **Package Extension**: `npm run package:extension` (generates `dist/ramos-maps-connector-v1.0.5.zip`)
+- **Package Extension**: `npm run package:extension` (generates `dist/ramos-maps-connector-v1.0.6.zip`)
 - **Check Project Consistency**: `npm run check:consistency`
 
 ---

@@ -97,7 +97,7 @@
   const manifestVersion =
     typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getManifest
       ? chrome.runtime.getManifest().version
-      : "1.0.5";
+      : "1.0.6";
 
   if (el.extVersion) {
     el.extVersion.textContent = `v${manifestVersion}`;
@@ -253,10 +253,12 @@
     return "\uFEFF" + [CSV_HEADERS.join(","), ...valid.map(leadToCsvRow)].join("\r\n");
   }
 
-  // ─── WEBSITE INTELLIGENCE EXTENDED CSV (social + people) ─────────────────
+  // ─── WEBSITE INTELLIGENCE EXTENDED CSV (social + people + Phase 8 fields) ─────────────────
   const WEBSITE_CSV_HEADERS = [
-    "Company", "Website", "Primary Email", "Additional Emails", "Email Status",
+    "Company", "Lead Score", "Quality Tier", "Website",
+    "Primary Email", "Email Role", "Additional Emails", "Email Status",
     "Primary Phone", "Additional Phones",
+    "Decision Maker Name", "Decision Maker Title", "Decision Maker Email", "Decision Maker LinkedIn", "People Count",
     "Address", "City", "State / Region", "Country", "Postal Code",
     "Industry", "Description",
     "LinkedIn", "Twitter / X", "Facebook", "Instagram", "YouTube", "GitHub",
@@ -276,17 +278,29 @@
       : (Array.isArray(l.phones) && l.phones.length > 1
         ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
         : "");
+    const peopleCount = l.people_count != null
+      ? l.people_count
+      : (Array.isArray(l.people) ? l.people.length : 0);
+
     return [
       escapeCsvCell(l.company_name || l.website || "—"),
+      escapeCsvCell(l.lead_score != null ? l.lead_score : ""),
+      escapeCsvCell(l.quality_tier || ""),
       escapeCsvCell(l.website),
       escapeCsvCell(l.email),
+      escapeCsvCell(l.email_role || l.emailRole || ""),
       escapeCsvCell(extraEmails),
       escapeCsvCell(l.email_status),
       escapeCsvCell(l.phone),
       escapeCsvCell(extraPhones),
+      escapeCsvCell(l.decision_maker_name || ""),
+      escapeCsvCell(l.decision_maker_title || ""),
+      escapeCsvCell(l.decision_maker_email || ""),
+      escapeCsvCell(l.decision_maker_linkedin || ""),
+      escapeCsvCell(peopleCount),
       escapeCsvCell(l.address),
       escapeCsvCell(l.city),
-      escapeCsvCell(l.region),
+      escapeCsvCell(l.region || l.state),
       escapeCsvCell(l.country),
       escapeCsvCell(l.postal_code),
       escapeCsvCell(l.category),
@@ -477,12 +491,13 @@
     });
   }
 
-  function updateSummaryStats(stats, readyCount) {
+  function updateSummaryStats(stats, readyCount, dedupCount = 0) {
     if (el.statDiscovered) el.statDiscovered.textContent = stats?.discovered ?? readyCount;
     if (el.statQualified) el.statQualified.textContent = stats?.qualified ?? readyCount;
     if (el.statEnriched) el.statEnriched.textContent = stats?.enriched ?? readyCount;
     if (el.statFailed) el.statFailed.textContent = stats?.failed ?? 0;
-    if (el.statDuplicates) el.statDuplicates.textContent = stats?.duplicatesSkipped ?? 0;
+    const dups = Math.max(Number(stats?.duplicatesSkipped) || 0, dedupCount);
+    if (el.statDuplicates) el.statDuplicates.textContent = String(dups);
     if (el.statReady) el.statReady.textContent = readyCount;
   }
 
@@ -490,9 +505,17 @@
     clearDiscoveryWatchdog();
 
     const status = payload?.status || "completed";
+    let dedupCount = 0;
     const incomingLeads = payload?.leads || payload?.records;
     if (Array.isArray(incomingLeads)) {
-      currentExtractedLeads = incomingLeads;
+      const Deduplicator = window.RamosDeduplicator || globalThis.RamosDeduplicator;
+      if (Deduplicator && typeof Deduplicator.deduplicateLeads === "function") {
+        const dedupResult = Deduplicator.deduplicateLeads(incomingLeads);
+        currentExtractedLeads = dedupResult.deduplicatedLeads;
+        dedupCount = dedupResult.duplicatesRemoved;
+      } else {
+        currentExtractedLeads = incomingLeads;
+      }
     }
 
     if (el.extractBtn) el.extractBtn.classList.remove("hidden");
@@ -510,7 +533,11 @@
             ? "Extraction Incomplete"
             : "Discovery Complete";
       }
-      if (payload?.stats) updateSummaryStats(payload.stats, currentExtractedLeads.length);
+      if (payload?.stats) {
+        updateSummaryStats(payload.stats, currentExtractedLeads.length, dedupCount);
+      } else if (dedupCount > 0 && el.statDuplicates) {
+        el.statDuplicates.textContent = String(dedupCount);
+      }
       updateEnrichmentUI(currentExtractedLeads);
       if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = false;
       if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = false;
@@ -799,7 +826,7 @@
         throw new Error("CRAWL_ABORTED");
       }
       const fetchSignal = AbortSignal.timeout
-        ? AbortSignal.any([enrichAbortController.signal, AbortSignal.timeout(10000)])
+        ? AbortSignal.any([enrichAbortController.signal, AbortSignal.timeout(6000)])
         : enrichAbortController.signal;
 
       const resp = await fetch(targetUrl, { signal: fetchSignal, credentials: "omit" });
@@ -808,26 +835,26 @@
       return Acquisition.acquireFromRawHtml(html, targetUrl);
     };
 
-    try {
-      for (let i = 0; i < total; i++) {
-        if (enrichAbortController.signal.aborted) {
-          break;
-        }
+    const CONCURRENCY = 3;
+    let completedCount = 0;
+    let nextQueueIdx = 0;
 
+    async function enrichmentWorker() {
+      while (nextQueueIdx < total) {
+        if (enrichAbortController.signal.aborted) break;
+        const i = nextQueueIdx++;
         const lead = currentExtractedLeads[i];
+
         if (!lead || !lead.website || typeof lead.website !== "string" || !lead.website.trim()) {
           skippedCount++;
+          completedCount++;
           if (el.enrichMetricSkipped) el.enrichMetricSkipped.textContent = String(skippedCount);
           continue;
         }
 
         const cleanWeb = lead.website.trim();
         if (el.enrichProgressText) {
-          el.enrichProgressText.textContent = `Enriching ${i + 1} / ${total}: ${cleanWeb}`;
-        }
-        if (el.enrichProgressBar) {
-          const pct = Math.round(((i + 1) / total) * 100);
-          el.enrichProgressBar.style.width = `${pct}%`;
+          el.enrichProgressText.textContent = `Enriching (${completedCount + 1}/${total}): ${cleanWeb}`;
         }
 
         try {
@@ -857,11 +884,58 @@
           console.warn(`[RAMOS][ENRICH_LEAD_FAILED] ${cleanWeb}`, err);
           failedCount++;
           if (el.enrichMetricFailed) el.enrichMetricFailed.textContent = String(failedCount);
+        } finally {
+          completedCount++;
+          if (el.enrichProgressBar) {
+            const pct = Math.round((completedCount / total) * 100);
+            el.enrichProgressBar.style.width = `${pct}%`;
+          }
         }
+      }
+    }
+
+    try {
+      const workers = [];
+      const numWorkers = Math.min(CONCURRENCY, total);
+      for (let w = 0; w < numWorkers; w++) {
+        workers.push(enrichmentWorker());
+      }
+      await Promise.all(workers);
+
+      // Conservative post-enrichment deduplication
+      const Deduplicator = window.RamosDeduplicator || globalThis.RamosDeduplicator;
+      if (Deduplicator && typeof Deduplicator.deduplicateLeads === "function") {
+        const dedupResult = Deduplicator.deduplicateLeads(currentExtractedLeads);
+        currentExtractedLeads = dedupResult.deduplicatedLeads;
+      }
+
+      // Compute Phase 8 UI enrichment metrics
+      let emailsFound = 0;
+      let dmsFound = 0;
+      let totalScore = 0;
+      let scoredCount = 0;
+
+      for (const lead of currentExtractedLeads) {
+        if (lead.email || (Array.isArray(lead.additional_emails) && lead.additional_emails.length > 0)) {
+          emailsFound++;
+        }
+        if (lead.decision_maker_name || (Array.isArray(lead.people) && lead.people.length > 0)) {
+          dmsFound++;
+        }
+        if (typeof lead.lead_score === "number") {
+          totalScore += lead.lead_score;
+          scoredCount++;
+        }
+      }
+      const avgScore = scoredCount > 0 ? Math.round(totalScore / scoredCount) : 0;
+      const metricsSummary = `${total} leads → ${enrichedCount} enriched → ${skippedCount} skipped → ${failedCount} failed | ${emailsFound} emails | ${dmsFound} decision makers | Avg Lead Score: ${avgScore}`;
+
+      if (el.enrichStatusInfo) {
+        el.enrichStatusInfo.textContent = metricsSummary;
       }
 
       showToast(
-        `Enrichment complete: ${enrichedCount} enriched, ${skippedCount} skipped, ${failedCount} failed.`,
+        `Enrichment complete: ${enrichedCount} enriched, ${emailsFound} emails, ${dmsFound} decision makers (Avg Score: ${avgScore}).`,
         "success"
       );
     } catch (err) {
@@ -877,9 +951,6 @@
       el.stopEnrichBtn?.classList.add("hidden");
       if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = currentExtractedLeads.length === 0;
       if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = currentExtractedLeads.length === 0;
-      if (el.enrichStatusInfo) {
-        el.enrichStatusInfo.textContent = `Enriched ${enrichedCount} leads (${skippedCount} skipped, ${failedCount} failed)`;
-      }
     }
   }
 

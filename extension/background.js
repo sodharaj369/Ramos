@@ -16,7 +16,7 @@ const getExtensionVersion = () => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return "1.0.5";
+    return "1.0.6";
   }
 };
 
@@ -265,8 +265,10 @@ function createCsv(leads) {
 
 function createEnrichedCsv(leads) {
   const ENRICHED_CSV_HEADERS = [
-    "Company", "Website", "Primary Email", "Additional Emails", "Email Status",
+    "Company", "Lead Score", "Quality Tier", "Website",
+    "Primary Email", "Email Role", "Additional Emails", "Email Status",
     "Primary Phone", "Additional Phones",
+    "Decision Maker Name", "Decision Maker Title", "Decision Maker Email", "Decision Maker LinkedIn", "People Count",
     "Address", "City", "State / Region", "Country", "Postal Code",
     "Industry", "Description",
     "LinkedIn", "Twitter / X", "Facebook", "Instagram", "YouTube", "GitHub",
@@ -287,14 +289,25 @@ function createEnrichedCsv(leads) {
       : (Array.isArray(l.phones) && l.phones.length > 1
         ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
         : "");
+    const peopleCount = l.people_count != null
+      ? l.people_count
+      : (Array.isArray(l.people) ? l.people.length : 0);
     rows.push([
       escapeCsvCell(l.company_name || l.website || "—"),
+      escapeCsvCell(l.lead_score != null ? l.lead_score : ""),
+      escapeCsvCell(l.quality_tier || ""),
       escapeCsvCell(l.website),
       escapeCsvCell(l.email),
+      escapeCsvCell(l.email_role || l.emailRole || ""),
       escapeCsvCell(extraEmails),
       escapeCsvCell(l.email_status),
       escapeCsvCell(l.phone),
       escapeCsvCell(extraPhones),
+      escapeCsvCell(l.decision_maker_name || ""),
+      escapeCsvCell(l.decision_maker_title || ""),
+      escapeCsvCell(l.decision_maker_email || ""),
+      escapeCsvCell(l.decision_maker_linkedin || ""),
+      escapeCsvCell(peopleCount),
       escapeCsvCell(l.address),
       escapeCsvCell(l.city),
       escapeCsvCell(l.region || l.state),

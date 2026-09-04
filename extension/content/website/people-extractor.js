@@ -445,9 +445,94 @@
     return deduplicateAndCleanPeople([...listA, ...listB]);
   }
 
+  /**
+   * Evaluates job title against executive seniority tiers.
+   * @param {string} title
+   * @returns {number} Score from 0.40 to 1.00
+   */
+  function scoreSeniority(title) {
+    if (!title || typeof title !== "string") return 0.40;
+    const lower = title.toLowerCase().trim();
+
+    // Tier 1: Ownership, C-Suite & Top Executive Leadership (1.00)
+    if (/\b(founder|co-founder|owner|co-owner|ceo|chief executive officer|president|managing director|executive director|managing partner|principal|sole proprietor)\b/.test(lower)) {
+      return 1.0;
+    }
+
+    // Tier 2: Executive Leadership & Other C-Level (0.90)
+    if (/\b(coo|cfo|cto|cmo|cro|cio|chief operating|chief financial|chief technology|chief marketing|chief revenue|chief information|chief medical|chief officer)\b/.test(lower)) {
+      return 0.90;
+    }
+
+    // Tier 4: Vice Presidents / Heads (0.85)
+    if (/\b(vice president|vp|svp|evp|head of|divisional head)\b/.test(lower)) {
+      return 0.85;
+    }
+
+    // Tier 5: Directors / Partners / GMs (0.80)
+    if (/\b(director|partner|general manager|practice leader|branch manager)\b/.test(lower)) {
+      return 0.80;
+    }
+
+    // Tier 6: Managers / Team Leads (0.65)
+    if (/\b(manager|lead|supervisor|team leader|senior)\b/.test(lower)) {
+      return 0.65;
+    }
+
+    // Tier 7: Staff / Associates (0.50)
+    return 0.50;
+  }
+
+  /**
+   * Ranks an array of people by executive seniority score and contact richness.
+   * @param {Array<Object>} peopleList
+   * @returns {Array<Object>} Sorted people array with seniorityScore attached
+   */
+  function rankPeopleBySeniority(peopleList = []) {
+    if (!Array.isArray(peopleList)) return [];
+
+    const scored = peopleList.map((p) => {
+      const copy = { ...p };
+      copy.seniorityScore = typeof copy.seniorityScore === "number" ? copy.seniorityScore : scoreSeniority(copy.title);
+      return copy;
+    });
+
+    return scored.sort((a, b) => {
+      // 1. Primary sort: Seniority Score
+      if (b.seniorityScore !== a.seniorityScore) {
+        return b.seniorityScore - a.seniorityScore;
+      }
+      // 2. Secondary sort: Has direct email
+      const aHasEmail = Boolean(a.email && a.email.trim());
+      const bHasEmail = Boolean(b.email && b.email.trim());
+      if (bHasEmail !== aHasEmail) return bHasEmail ? 1 : -1;
+
+      // 3. Tertiary sort: Has LinkedIn URL
+      const aHasLi = Boolean(a.linkedin_url && a.linkedin_url.trim());
+      const bHasLi = Boolean(b.linkedin_url && b.linkedin_url.trim());
+      if (bHasLi !== aHasLi) return bHasLi ? 1 : -1;
+
+      // 4. Quaternary sort: General confidence
+      return (b.confidence || 0) - (a.confidence || 0);
+    });
+  }
+
+  /**
+   * Selects the highest-ranking decision maker from a list of people.
+   * @param {Array<Object>} peopleList
+   * @returns {Object|null} Top decision maker or null
+   */
+  function selectPrimaryDecisionMaker(peopleList = []) {
+    const ranked = rankPeopleBySeniority(peopleList);
+    return ranked.length > 0 ? ranked[0] : null;
+  }
+
   return {
     extractPeople,
     mergePeople,
+    scoreSeniority,
+    rankPeopleBySeniority,
+    selectPrimaryDecisionMaker,
     isValidPersonName,
     splitNameAndTitle,
     TITLE_REGEX,

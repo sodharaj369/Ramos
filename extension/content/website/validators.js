@@ -147,19 +147,44 @@
       cleanWebDomain && (domain === cleanWebDomain || domain.endsWith("." + cleanWebDomain))
     );
 
+    function classifyFunctionalRole(u) {
+      if (!u) return "direct";
+      const un = u.toLowerCase();
+      if (/^(sales|inquiries|inquiry|enquiry|enquiries|quotes|quote|deals|newbusiness|orders|order|orderdesk|bizdev)$/i.test(un)) {
+        return "sales";
+      }
+      if (/^(support|help|customercare|care|service|services|billing|techsupport)$/i.test(un)) {
+        return "support";
+      }
+      if (/^(info|contact|hello|office|admin|mail|general|team|feedback|frontdesk|reception)$/i.test(un)) {
+        return "general";
+      }
+      if (/^(marketing|press|media|pr|partnerships)$/i.test(un)) {
+        return "marketing";
+      }
+      if (/^(careers|jobs|recruiting|recruitment|talent|hr|work)$/i.test(un)) {
+        return "careers";
+      }
+      return "direct";
+    }
+
+    const emailRole = classifyFunctionalRole(user);
+
     if (FREE_EMAIL_DOMAINS.has(domain)) {
       return {
         isValid: true,
         classification: "freemail",
+        emailRole,
         reason: "Personal / free email provider",
       };
     }
 
     if (domainMatchesSite) {
-      const isRoleAccount = /^(info|sales|contact|support|hello|team|admin|help|office|inquiries|press|careers|billing|bookings|booking|reservations|reservation|service|services|feedback|enquiry|enquiries|mail|general)$/i.test(user);
+      const isRoleAccount = emailRole !== "direct";
       return {
         isValid: true,
         classification: isRoleAccount ? "business_role" : "business_individual",
+        emailRole,
         reason: isRoleAccount ? "Official business role address" : "Official individual address",
       };
     }
@@ -167,6 +192,7 @@
     return {
       isValid: true,
       classification: "external_business",
+      emailRole,
       reason: "Custom domain email address",
     };
   }
@@ -309,11 +335,27 @@
     return true;
   }
 
+  /**
+   * Normalizes a social URL by stripping tracking parameters, hash fragments, and trailing slashes.
+   * @param {string} url
+   * @param {string} [platform]
+   * @returns {string}
+   */
+  function normalizeSocialUrl(url, platform) {
+    if (!url || typeof url !== "string") return "";
+    let clean = url.trim();
+    clean = clean.split("#")[0];
+    clean = clean.split("?")[0];
+    clean = clean.replace(/\/+$/, "");
+    return clean;
+  }
+
   return {
     isValidEmailSyntax,
     evaluateEmail,
     isValidPhone,
     isSocialProfileUrl,
     isValidCompanyName,
+    normalizeSocialUrl,
   };
 });

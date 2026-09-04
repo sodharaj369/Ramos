@@ -10,14 +10,21 @@
  * 5. Attaches comprehensive field-level _provenance dictionary.
  */
 (function (root, factory) {
-  const instance = factory();
   if (typeof module === "object" && module.exports) {
-    module.exports = instance;
-  }
-  if (root) {
+    module.exports = factory(
+      require("./people-extractor.js"),
+      require("./lead-scorer.js")
+    );
+  } else {
+    const g = typeof globalThis !== "undefined" ? globalThis : root;
+    const instance = factory(
+      root.RamosPeopleExtractor || g.RamosPeopleExtractor,
+      root.RamosLeadScorer || g.RamosLeadScorer
+    );
     root.RamosWebsiteEnricher = instance;
+    if (g && !g.RamosWebsiteEnricher) g.RamosWebsiteEnricher = instance;
   }
-})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this, function (PeopleExtractor, LeadScorer) {
   "use strict";
 
   function isNonEmptyString(val) {
@@ -57,7 +64,7 @@
     // If websiteLead is missing or empty, return original Maps lead with provenance
     if (!websiteLead || typeof websiteLead !== "object") {
       merged._provenance = provenance;
-      merged.enrichment_status = "skipped_no_website";
+      merged.enrichment_status = (merged.website && typeof merged.website === "string" && merged.website.trim().length > 0) ? "failed" : "skipped_no_website";
       return merged;
     }
 
@@ -156,17 +163,34 @@
       provenance.social = { source: "WEBSITE" };
     }
 
-    // 10. People / Leadership (Website-only dimension)
+    // 10. People / Leadership (Website-only dimension) & Decision Maker (Phase 8A)
     // CRITICAL ISOLATION: People data attaches to lead.people ONLY.
     // Employee email/phone NEVER overwrites company primary email/phone.
     const websitePeople = Array.isArray(websiteLead.people) ? websiteLead.people : [];
-    merged.people = websitePeople.map((p) => ({
+    const PeopleExt = PeopleExtractor || (typeof root !== "undefined" && root.RamosPeopleExtractor) || (typeof globalThis !== "undefined" ? globalThis.RamosPeopleExtractor : null);
+    const rankedPeople = PeopleExt && typeof PeopleExt.rankPeopleBySeniority === "function"
+      ? PeopleExt.rankPeopleBySeniority(websitePeople)
+      : websitePeople;
+
+    merged.people = rankedPeople.map((p) => ({
       name: p.name,
       title: p.title || null,
       linkedin_url: p.linkedin_url || null,
       email: p.email || null,
       phone: p.phone || null,
+      seniorityScore: p.seniorityScore,
     }));
+    merged.people_count = merged.people.length;
+
+    const primaryDm = PeopleExt && typeof PeopleExt.selectPrimaryDecisionMaker === "function"
+      ? PeopleExt.selectPrimaryDecisionMaker(merged.people)
+      : (merged.people[0] || null);
+
+    merged.decision_maker_name = primaryDm ? primaryDm.name : (websiteLead.decision_maker_name || null);
+    merged.decision_maker_title = primaryDm ? (primaryDm.title || null) : (websiteLead.decision_maker_title || null);
+    merged.decision_maker_email = primaryDm ? (primaryDm.email || null) : (websiteLead.decision_maker_email || null);
+    merged.decision_maker_linkedin = primaryDm ? (primaryDm.linkedin_url || null) : (websiteLead.decision_maker_linkedin || null);
+
     if (merged.people.length > 0) {
       provenance.people = { source: "WEBSITE", count: merged.people.length };
     }
@@ -216,6 +240,18 @@
       ...(Array.isArray(mapsLead._evidence) ? mapsLead._evidence : []),
       ...(Array.isArray(websiteLead._evidence) ? websiteLead._evidence : []),
     ];
+
+    // 14. Compute Lead Quality Score (0-100) & Quality Tier (Phase 8A)
+    const Scorer = LeadScorer || (typeof root !== "undefined" && root.RamosLeadScorer) || (typeof globalThis !== "undefined" ? globalThis.RamosLeadScorer : null);
+    if (Scorer && typeof Scorer.computeLeadScore === "function") {
+      const scoreRes = Scorer.computeLeadScore(merged);
+      merged.lead_score = scoreRes.score;
+      merged.quality_tier = scoreRes.tier;
+      provenance.lead_score = scoreRes.breakdown;
+    } else {
+      merged.lead_score = 0;
+      merged.quality_tier = "LOW";
+    }
 
     return merged;
   }

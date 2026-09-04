@@ -105,6 +105,16 @@ gantt
   - Extension packaging verified: 34 clean runtime files (90.2 KB) with 100% source-to-distribution parity.
   - Final audit document authored: `docs/RAMOS_FINAL_RELEASE_AUDIT.md`.
 
+### Phase 8: Real-World Lead Quality, Reliability & Production Hardening (COMPLETED)
+- **Target**: Transform RAMOS from raw data extraction into high-precision sales intelligence with lead scoring, decision maker ranking, resilient bounded crawling, deduplication, and rich 34-column CRM exports.
+- **Deliverables Completed**:
+  - **Phase 8A — Lead Quality + Decision Maker**: Deterministic 0–100 lead scoring (`extension/content/website/lead-scorer.js`), quality tiering (HIGH/MEDIUM/LOW), executive seniority ranking, and flat CRM fields (`decision_maker_name`, `decision_maker_title`, `decision_maker_email`, `decision_maker_linkedin`, `people_count`).
+  - **Phase 8B — Email + Social Intelligence**: Functional role email classification (`sales`, `general`, `support`, `marketing`, `careers`, `direct`), deterministic primary email selection, corporate social profile normalization, and strict employee contact isolation.
+  - **Phase 8C — Reliability & Resilience**: 6s timeout ceiling per page fetch, bounded worker pool (`CONCURRENCY = 3`), non-bypass Cloudflare XOR public token email decoding, graceful failure tolerance (403/404/429/network errors never stop batch), and immediate cancellation response.
+  - **Phase 8D — Deduplication Engine**: Conservative duplicate detection (`extension/shared/deduplicator.js`) by `place_id`, `domain + phone`, and `domain + high name similarity` without merging distinct branches or businesses with different domains/phones.
+  - **Phase 8E — Export & UI Improvements**: 34-column enriched XLSX & CSV export parity, user-visible enrichment metrics summary (`10 leads → 8 enriched → 1 skipped → 1 failed | 6 emails | 5 decision makers | Avg Lead Score: 78`), and real Chrome E2E verification across 7 suites.
+- **Validation**: 157 automated tests passed (0 failures); complete real-Chrome Puppeteer E2E QA suite verified actual binary XLSX and CSV downloads on disk. Documented in `docs/RAMOS_WEBSITE_PHASE_8_REPORT.md`.
+
 ---
 
 ## 3. Mandatory Quality & Regression Gates
