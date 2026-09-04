@@ -110,12 +110,13 @@ sequenceDiagram
         CS->>DOM: Identity verification (expectedName vs panelName)
         CS-->>SW: SI_DETAIL_READY { index, detailLead, runId, attemptId }
         SW->>SW: setCandidateTerminal(index, "READY") & broadcastProgress
-        SW->>Popup: SI_DISCOVERY_PROGRESS update
+        SW->>Popup: SI_DISCOVERY_PROGRESS / SI_PROGRESS_UPDATE
     end
 
     SW->>SW: Run status = "completed"
-    Popup->>SW: SI_TRIGGER_DOWNLOAD_CSV
-    SW->>SW: generate CSV string (createCsv)
+    SW->>Popup: SI_DISCOVERY_COMPLETE { leads, stats }
+    Popup->>SW: SI_TRIGGER_DOWNLOAD_CSV / SI_TRIGGER_DOWNLOAD_EXCEL
+    SW->>SW: Generate export (CSV or Excel OOXML)
     SW->>SW: chrome.downloads.download({ url: dataUrl, filename })
 ```
 

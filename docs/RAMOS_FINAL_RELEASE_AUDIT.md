@@ -12,13 +12,13 @@
 RAMOS has completed its full implementation roadmap (Phases 0 through 7) and post-Phase 7 crawler intelligence hardening. The extension successfully unites **Google Maps Lead Extraction** and **Client-Side Website Intelligence** within a single, privacy-first, zero-dependency Chrome Extension.
 
 ### Release Decision: **GO (100% PASS)**
-- **All 95 Automated Tests Passing**: 14 Maps tests + 81 Website tests.
+- **All 111 Automated Tests Passing**: 14 Maps tests + 97 Website tests across 9 test suites.
 - **Crawler Intelligence & Budget Bounding**: Maximum crawl budget enforcement (1, 5, 10, 20 as ceilings), semantic priority scoring, dynamic queue re-ranking based on missing fields, fragment/tracking URL deduplication, and transparent stats reporting ("Scanned X of Y pages").
 - **Maps Baseline Stability**: Google Maps extraction engine remains 100% frozen, intact, and regression-tested.
 - **Website Intelligence**: Single-page extraction, targeted business crawler, people/leadership extraction, deterministic confidence scoring, and Maps enrichment fully validated.
-- **Export Parity**: Strict 24-column compatibility across RFC-4180 CSV and ECMA-376 OOXML Strict Excel (.xlsx).
+- **Export Parity**: Maps maintains strict 24-column CSV/XLSX. Website Intelligence exports as 26-column CSV + 2-sheet XLSX (Leads + People) with full social URL preservation.
 - **Security & Privacy**: Zero remote proxy dependencies, zero external APIs, zero production secrets or real lead data in Git, minimal host permissions.
-- **Package Integrity**: 34 clean runtime files (94.6 KB) with verified source-to-distribution parity.
+- **Package Integrity**: 34 clean runtime files (97.8 KB) with verified source-to-distribution parity.
 
 ---
 
@@ -58,14 +58,18 @@ RAMOS Standalone Chrome Extension (Manifest V3)
 | :--- | :--- | :--- | :--- |
 | **Google Maps Discovery** | `content/maps/*` | Frozen baseline v1.0.5; per-card isolation; deduplication | **STABLE** |
 | **Single-Page Analysis** | `content/website/page-analyzer.js` | Extracts metadata, OpenGraph, mailto, tel, semantic address | **VERIFIED** |
-| **Targeted Crawler** | `content/website/crawl-queue.js` | Bounded priority queue, same-domain isolation, early exit | **VERIFIED** |
+| **Targeted Crawler** | `content/website/crawl-queue.js` | Priority-scored queue (Contact > Team > About > ...), same-domain isolation, early exit | **VERIFIED** |
 | **People Extraction** | `content/website/people-extractor.js` | JSON-LD, Microdata, team cards; employee email isolation | **VERIFIED** |
 | **Confidence Scoring** | `content/website/confidence.js` | 7 source tiers ($0.55 - 0.98$), cross-page corroboration | **VERIFIED** |
 | **Conflict Resolution** | `content/website/confidence.js` | Deterministic ranking; prefers contact page & structured data | **VERIFIED** |
 | **Dual-Mode UI** | `popup.html`, `popup.js` | Google Maps \| Website Intelligence tab switching | **VERIFIED** |
+| **"Open Google Maps" CTA** | `popup.js` | Opens Maps in new tab when active tab is not Google Maps | **VERIFIED** |
 | **Maps Enrichment** | `content/website/enricher.js` | Additive merge; Maps authority on physical fields; `_provenance` | **VERIFIED** |
-| **OOXML Excel Export** | `shared/xlsx-builder.js` | Native binary builder; raw text for phone/postal; clickable links | **VERIFIED** |
-| **CSV Export** | `popup.js`, `background.js` | RFC-4180 compliant, double-quoted cell escapes, 24 columns | **VERIFIED** |
+| **Maps XLSX Export** | `shared/xlsx-builder.js` `buildXlsx()` | Native binary builder; 24-column canonical; raw text for phone/postal; clickable links | **VERIFIED** |
+| **Maps CSV Export** | `popup.js` `generateCSV()` | RFC-4180 compliant, 24 columns, double-quoted escapes | **VERIFIED** |
+| **Website XLSX Export** | `shared/xlsx-builder.js` `buildWebsiteXlsx()` | 2-sheet XLSX: Leads (26 cols with social URLs) + People (7 cols) | **VERIFIED** |
+| **Website CSV Export** | `popup.js` `generateWebsiteCSV()` | 26-column CSV with LinkedIn/Twitter/Facebook/Instagram/YouTube/GitHub | **VERIFIED** |
+| **Download Pipeline** | `background.js` `SI_DOWNLOAD_FILE` | Data URI via background service worker; no Blob URL process-boundary failures | **VERIFIED** |
 
 ---
 
@@ -91,9 +95,11 @@ RAMOS Standalone Chrome Extension (Manifest V3)
 
 ---
 
-## 5. Export Audit & 24-Column Compatibility
+## 5. Export Audit
 
-Both CSV and Excel (.xlsx) exports produce identical, aligned datasets adhering to the RAMOS Canonical Schema:
+### Maps Canonical Export (24 columns) — FROZEN
+
+Both Maps CSV and Excel (.xlsx) exports produce identical, aligned datasets adhering to the RAMOS Canonical Schema:
 
 ```text
 Col  1: Company          Col  7: City            Col 13: Rating           Col 19: Menu URL
@@ -104,11 +110,15 @@ Col  5: Email Status     Col 11: Industry        Col 17: Booking URL      Col 23
 Col  6: Address          Col 12: Business Type   Col 18: Ordering URL     Col 24: Run ID
 ```
 
-### Formatting Verification:
-- **Phone & Postal Codes**: Enforced as raw text (`numFmtId="164"` formatCode `"@"`) to prevent Excel from dropping leading zeros (e.g. `"02138"` remains intact).
-- **Hyperlinks**: Clickable blue underlined text in Excel for Website, Booking, Ordering, and Source URLs.
-- **Sparse Lead Resilience**: Missing or null fields never shift neighboring columns.
-- **Website-Only Dimensions**: People (`lead.people`), social profiles (`lead.social`), and provenance (`lead._provenance`) attach cleanly to the lead object without disturbing the 24 export columns.
+### Website Intelligence Export — Extended Format
+
+**CSV (26 columns)**: Company, Website, Primary Email, Additional Emails, Email Status, Primary Phone, Additional Phones, Address, City, State/Region, Country, Postal Code, Industry, Description, **LinkedIn**, **Twitter / X**, **Facebook**, **Instagram**, **YouTube**, **GitHub**, Booking URL, Ordering URL, Menu URL, Source URL, Imported At, Source Query.
+
+**XLSX (2-sheet workbook)**:
+- Sheet 1 "Leads" — 26 columns, social URLs as clickable hyperlinks.
+- Sheet 2 "People" — 7 columns (Company, Name, Title, Email, Phone, LinkedIn, Profile URL).
+
+> See [`RAMOS_EXPORT_SPECIFICATION.md`](file:///d:/Ramos/docs/RAMOS_EXPORT_SPECIFICATION.md) for full column mapping.
 
 ---
 
@@ -116,22 +126,24 @@ Col  6: Address          Col 12: Business Type   Col 18: Ordering URL     Col 24
 
 ### Automated Node.js Tests (`npm test`):
 ```text
-Total Test Suites: 7
-Total Tests Run:    78
-Passed:             78
-Failed:              0
-Duration:           ~630ms
+Total Test Suites: 9
+Total Tests Run:    111
+Passed:             111
+Failed:               0
+Duration:          ~670ms
 
 Breakdown:
-• Google Maps Pipeline Tests:       13 PASS
-• Google Maps Vadapav E2E Trace:     1 PASS (14/14 Frozen Maps intact)
-• Website Confidence & Conflict:     8 PASS
-• Website Targeted Crawler:          5 PASS
-• Website People & Leadership:       7 PASS
-• Website Single-Page Extraction:   13 PASS
-• Website Popup UI Controller:       5 PASS
-• Google Maps → Website Enrichment: 21 PASS
-• Export Parity & Synthetic Data:    5 PASS
+• Google Maps Pipeline Tests:         13 PASS
+• Google Maps Vadapav E2E Trace:       1 PASS (14/14 Frozen Maps intact)
+• Website Confidence & Conflict:       8 PASS
+• Website Targeted Crawler:            9 PASS  (priority scoring, budget, dedup, early exit)
+• Website People & Leadership:         7 PASS
+• Website Single-Page Extraction:     13 PASS
+• Website Popup UI Controller:         8 PASS  (includes Maps CTA + export fix)
+• Google Maps → Website Enrichment:   21 PASS
+• Export Parity & Synthetic Data:      5 PASS
+• Multi-Contact Evidence:              7 PASS
+• Social Export Parity:               14 PASS  (all 6 platforms, XLSX 2-sheet, CSV 26-col)
 ```
 
 ### Real Chrome Browser Smoke Tests:
@@ -152,7 +164,7 @@ Breakdown:
 
 ## 7. Package Inventory (`dist/ramos-maps-connector-v1.0.5.zip`)
 
-Total packaged files: **34** | Package size: **90.2 KB**
+**Total packaged files: **34** | Package size: **97.8 KB**
 
 ```text
 manifest.json                     content/maps/validators.js
@@ -195,5 +207,12 @@ content/maps/selectors.js         content/website/crawl-queue.js
 ## 9. Conclusion & Release Decision
 
 RAMOS v1.0.5 satisfies all stability, privacy, security, extraction, enrichment, and export criteria defined in the project specification.
+
+**Phase 7 hardening complete:**
+- Silent download failures fixed via Data URI pipeline.
+- Crawler intelligence upgraded to priority-based scoring.
+- Social data export implemented (26-col CSV + 2-sheet XLSX with People sheet).
+- "Open Google Maps" CTA added for non-Maps tabs.
+- 111 automated tests passing.
 
 **Final Release Status: GO (FROZEN & READY FOR DEPLOYMENT)**

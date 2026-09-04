@@ -140,11 +140,18 @@
       }
     }
 
-    // 9. Social Profiles (Website-only dimension)
-    merged.social = {
+    // 9. Social Profiles (Website-only dimension - preserve only discovered URLs)
+    const rawSocial = {
       ...(mapsLead.social || {}),
       ...(websiteLead.social || {}),
     };
+    const cleanSocial = {};
+    for (const [k, v] of Object.entries(rawSocial)) {
+      if (typeof v === "string" && v.trim().length > 0) {
+        cleanSocial[k] = v.trim();
+      }
+    }
+    merged.social = cleanSocial;
     if (Object.keys(merged.social).length > 0) {
       provenance.social = { source: "WEBSITE" };
     }
@@ -170,9 +177,34 @@
       provenance.description = { source: "WEBSITE" };
     }
 
-    // 12. Corporate Emails & Phones arrays
-    merged.emails = Array.isArray(websiteLead.emails) ? websiteLead.emails : [];
-    merged.phones = Array.isArray(websiteLead.phones) ? websiteLead.phones : [];
+    // 12. Corporate Emails & Phones arrays (deterministic primary + additional[])
+    if (isNonEmptyString(merged.email)) {
+      const lowerMerged = merged.email.toLowerCase().trim();
+      const webEmails = Array.isArray(websiteLead.emails) ? websiteLead.emails : [];
+      const distinctWebEmails = webEmails.filter((e) => {
+        const emStr = typeof e === "string" ? e : e.email;
+        return emStr && emStr.toLowerCase().trim() !== lowerMerged;
+      });
+      merged.emails = [{ email: merged.email, type: merged.email_status || "verified", confidence: 1.0 }, ...distinctWebEmails];
+      merged.additional_emails = distinctWebEmails.map((e) => (typeof e === "string" ? e : e.email)).filter(Boolean);
+    } else {
+      merged.emails = [];
+      merged.additional_emails = [];
+    }
+
+    if (isNonEmptyString(merged.phone)) {
+      const mergedDigits = String(merged.phone).replace(/\D/g, "");
+      const webPhones = Array.isArray(websiteLead.phones) ? websiteLead.phones : [];
+      const distinctWebPhones = webPhones.filter((p) => {
+        const phStr = typeof p === "string" ? p : p.phone;
+        return phStr && phStr.replace(/\D/g, "") !== mergedDigits;
+      });
+      merged.phones = [{ phone: merged.phone, confidence: 1.0, sourceType: "primary" }, ...distinctWebPhones];
+      merged.additional_phones = distinctWebPhones.map((p) => (typeof p === "string" ? p : p.phone)).filter(Boolean);
+    } else {
+      merged.phones = [];
+      merged.additional_phones = [];
+    }
 
     // 13. Retain Raw Evidence & Set Enriched Status
     merged.enrichment_status = "enriched";

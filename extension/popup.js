@@ -106,6 +106,13 @@
   // ─── Local State ─────────────────────────────────────────────────────────────
   let currentActiveTabMode = "maps"; // "maps" | "website"
   let currentExtractedLeads = []; // Maps leads
+  if (typeof window !== "undefined") {
+    Object.defineProperty(window, "currentExtractedLeads", {
+      get: () => currentExtractedLeads,
+      set: (val) => { currentExtractedLeads = Array.isArray(val) ? val : []; },
+      configurable: true,
+    });
+  }
   let currentSearchQuery = null;
   let currentDetectedCards = 0;
 
@@ -118,6 +125,29 @@
   // Website Enrichment State (Phase 6)
   let isEnrichingWebsites = false;
   let enrichAbortController = null;
+
+  // Watchdog & Run Tracking
+  let activeRunId = null;
+  let discoveryWatchdogTimer = null;
+
+  function clearDiscoveryWatchdog() {
+    if (discoveryWatchdogTimer) {
+      clearTimeout(discoveryWatchdogTimer);
+      discoveryWatchdogTimer = null;
+    }
+  }
+
+  function resetDiscoveryWatchdog() {
+    clearDiscoveryWatchdog();
+    discoveryWatchdogTimer = setTimeout(() => {
+      console.warn("[RAMOS][WATCHDOG] Discovery watchdog expired (45s). Forcing terminal UI state.");
+      handleDiscoveryTerminalState({
+        status: "timeout",
+        leads: currentExtractedLeads,
+        error: "Maps results timed out — check that the search results are loaded.",
+      });
+    }, 45000);
+  }
 
   function showToast(msg, type = "success") {
     if (!el.exportToast) return;
@@ -236,12 +266,16 @@
 
   function websiteLeadToCsvRow(l) {
     const social = l.social || {};
-    const extraEmails = Array.isArray(l.emails) && l.emails.length > 1
-      ? l.emails.slice(1).map((e) => e.email || e).join("; ")
-      : "";
-    const extraPhones = Array.isArray(l.phones) && l.phones.length > 1
-      ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
-      : "";
+    const extraEmails = Array.isArray(l.additional_emails) && l.additional_emails.length > 0
+      ? l.additional_emails.join("; ")
+      : (Array.isArray(l.emails) && l.emails.length > 1
+        ? l.emails.slice(1).map((e) => e.email || e).join("; ")
+        : "");
+    const extraPhones = Array.isArray(l.additional_phones) && l.additional_phones.length > 0
+      ? l.additional_phones.join("; ")
+      : (Array.isArray(l.phones) && l.phones.length > 1
+        ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
+        : "");
     return [
       escapeCsvCell(l.company_name || l.website || "—"),
       escapeCsvCell(l.website),
@@ -424,11 +458,20 @@
       }
       chrome.tabs.sendMessage(activeTab.id, { type: "SI_DETECT_QUERY" }, (response) => {
         if (chrome.runtime.lastError || !response || !response.ok) {
-          updateMapsTabState(true, null, 0);
+          // Fallback to background discovery state if content script did not reply
+          chrome.runtime.sendMessage({ type: "GET_DISCOVERY_STATE" }, (bgRes) => {
+            if (bgRes && bgRes.ok && bgRes.mapsDetected) {
+              currentSearchQuery = bgRes.searchQuery || null;
+              currentDetectedCards = bgRes.cardCount || 0;
+              updateMapsTabState(true, currentSearchQuery, currentDetectedCards);
+            } else {
+              updateMapsTabState(true, null, 0);
+            }
+          });
           return;
         }
         currentSearchQuery = response.query || null;
-        currentDetectedCards = response.cardCount || 0;
+        currentDetectedCards = response.cardCount != null ? response.cardCount : (response.detected || 0);
         updateMapsTabState(true, currentSearchQuery, currentDetectedCards);
       });
     });
@@ -443,48 +486,157 @@
     if (el.statReady) el.statReady.textContent = readyCount;
   }
 
+  function handleDiscoveryTerminalState(payload) {
+    clearDiscoveryWatchdog();
+
+    const status = payload?.status || "completed";
+    const incomingLeads = payload?.leads || payload?.records;
+    if (Array.isArray(incomingLeads)) {
+      currentExtractedLeads = incomingLeads;
+    }
+
+    if (el.extractBtn) el.extractBtn.classList.remove("hidden");
+    if (el.stopBtn) el.stopBtn.classList.add("hidden");
+    if (el.progressContainer) el.progressContainer.classList.add("hidden");
+    if (el.currentBizCard) el.currentBizCard.classList.add("hidden");
+
+    if (currentExtractedLeads.length > 0 && el.resultSummary) {
+      el.resultSummary.classList.remove("hidden");
+      if (el.summaryTitle) {
+        el.summaryTitle.textContent =
+          status === "cancelled"
+            ? "Extraction Stopped"
+            : status === "failed" || status === "timeout"
+            ? "Extraction Incomplete"
+            : "Discovery Complete";
+      }
+      if (payload?.stats) updateSummaryStats(payload.stats, currentExtractedLeads.length);
+      updateEnrichmentUI(currentExtractedLeads);
+      if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = false;
+      if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = false;
+    } else {
+      // Zero leads terminal state
+      if (el.resultSummary) el.resultSummary.classList.add("hidden");
+      if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = true;
+      if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = true;
+      if (el.enrichWebsitesBtn) el.enrichWebsitesBtn.disabled = true;
+
+      if (status === "cancelled") {
+        showToast("Discovery stopped by user.", "info");
+      } else if (status === "timeout") {
+        showToast(payload?.error || "Maps discovery timed out.", "warning");
+      } else if (status === "failed") {
+        showToast(payload?.error || "Discovery failed.", "error");
+      } else {
+        showToast("No search results visible on map to extract.", "warning");
+      }
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    window.handleDiscoveryTerminalState = handleDiscoveryTerminalState;
+  }
+
   function listenForProgress() {
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.onMessage) return;
     chrome.runtime.onMessage.addListener((message) => {
       if (!message || !message.type) return;
-      if (message.type === "SI_PROGRESS_UPDATE") {
+
+      // SI_EXPORT_COMPLETE / SI_EXPORT_FAILED
+      if (message.type === "SI_EXPORT_COMPLETE") {
+        const fmtUpper = (message.format || "CSV").toUpperCase();
+        showToast(`Exported ${message.rowCount} leads to ${fmtUpper}.`, "success");
+        return;
+      }
+      if (message.type === "SI_EXPORT_FAILED") {
+        showToast(`Export failed: ${message.error}`, "error");
+        return;
+      }
+
+      // Terminal discovery messages
+      if (
+        message.type === "SI_DISCOVERY_COMPLETE" ||
+        message.type === "SI_DISCOVERY_STOPPED" ||
+        (message.type === "SI_DISCOVERY_PROGRESS" &&
+          (message.status === "completed" || message.status === "cancelled" || message.status === "failed"))
+      ) {
+        // State isolation: ignore if message belongs to an old runId
+        if (activeRunId && message.runId && message.runId !== activeRunId) {
+          console.log(`[RAMOS][STALE_MSG_IGNORED] runId=${message.runId} activeRunId=${activeRunId}`);
+          return;
+        }
+        handleDiscoveryTerminalState({
+          status: message.status || (message.type === "SI_DISCOVERY_STOPPED" ? "cancelled" : "completed"),
+          leads: message.leads || message.records || currentExtractedLeads,
+          stats: message.stats,
+          runId: message.runId,
+          error: message.error || message.statusText,
+        });
+        return;
+      }
+
+      // Progress updates: handle both SI_PROGRESS_UPDATE and SI_DISCOVERY_PROGRESS
+      if (message.type === "SI_PROGRESS_UPDATE" || message.type === "SI_DISCOVERY_PROGRESS") {
+        // State isolation: ignore if message belongs to an old runId
+        if (activeRunId && message.runId && message.runId !== activeRunId) {
+          return;
+        }
+
+        // Active progress resets the 45s watchdog timer
+        resetDiscoveryWatchdog();
+
         if (el.progressContainer) el.progressContainer.classList.remove("hidden");
-        if (el.progressBar && message.percent != null) {
-          el.progressBar.style.width = `${Math.min(Math.max(message.percent, 0), 100)}%`;
-        }
-        if (el.progressText && message.text) el.progressText.textContent = message.text;
+        if (el.extractBtn) el.extractBtn.classList.add("hidden");
+        if (el.stopBtn) el.stopBtn.classList.remove("hidden");
 
+        const target = Number(el.importLimit?.value) || 10;
+        let pct = 5;
+        if (message.percent != null) {
+          pct = message.percent;
+        } else if (message.found && message.found > 0) {
+          pct = Math.round(((message.processed || 0) / Math.max(target, message.found)) * 100);
+        }
+        if (el.progressBar) {
+          el.progressBar.style.width = `${Math.min(Math.max(pct, 5), 100)}%`;
+        }
+
+        const statusText =
+          message.text ||
+          message.statusText ||
+          (message.found ? `Extracting ${message.processed || 0} / ${message.found} leads...` : "Extracting leads from Google Maps...");
+        if (el.progressText) el.progressText.textContent = statusText;
+
+        if (Array.isArray(message.records) && message.records.length > 0) {
+          currentExtractedLeads = message.records;
+        } else if (Array.isArray(message.leads) && message.leads.length > 0) {
+          currentExtractedLeads = message.leads;
+        }
+
+        // currentBusiness compatibility: support flat properties and nested .fields
         if (message.currentBusiness && el.currentBizCard) {
-          el.currentBizCard.classList.remove("hidden");
-          if (el.currentBizName) el.currentBizName.textContent = message.currentBusiness.name || "—";
-          const fields = message.currentBusiness.fields || {};
-          const setField = (elem, val) => {
-            if (!elem) return;
-            elem.className = val ? "biz-field found" : "biz-field gray";
-          };
-          setField(el.fieldAddress, fields.address);
-          setField(el.fieldPhone, fields.phone);
-          setField(el.fieldWebsite, fields.website);
-          setField(el.fieldRating, fields.rating);
-          setField(el.fieldHours, fields.hours);
-        }
-      } else if (message.type === "SI_DISCOVERY_COMPLETE" || message.type === "SI_DISCOVERY_STOPPED") {
-        currentExtractedLeads = Array.isArray(message.leads) ? message.leads : [];
-        if (el.extractBtn) el.extractBtn.classList.remove("hidden");
-        if (el.stopBtn) el.stopBtn.classList.add("hidden");
-        if (el.progressContainer) el.progressContainer.classList.add("hidden");
-        if (el.currentBizCard) el.currentBizCard.classList.add("hidden");
+          const biz = message.currentBusiness;
+          const bizName = biz.company_name || biz.name;
+          if (bizName) {
+            el.currentBizCard.classList.remove("hidden");
+            if (el.currentBizName) el.currentBizName.textContent = bizName;
 
-        if (currentExtractedLeads.length > 0 && el.resultSummary) {
-          el.resultSummary.classList.remove("hidden");
-          if (el.summaryTitle) {
-            el.summaryTitle.textContent =
-              message.status === "completed" ? "Discovery Complete" : "Extraction Stopped";
+            const fields = biz.fields || {};
+            const addr = biz.address || fields.address;
+            const ph = biz.phone || fields.phone;
+            const web = biz.website || fields.website;
+            const rat = biz.rating != null ? biz.rating : fields.rating;
+            const hrs = biz.opening_status || fields.hours;
+
+            const setField = (elem, val) => {
+              if (!elem) return;
+              elem.className = val ? "biz-field found" : "biz-field gray";
+            };
+            setField(el.fieldAddress, addr);
+            setField(el.fieldPhone, ph);
+            setField(el.fieldWebsite, web);
+            setField(el.fieldRating, rat != null);
+            setField(el.fieldHours, hrs);
           }
-          if (message.stats) updateSummaryStats(message.stats, currentExtractedLeads.length);
-          updateEnrichmentUI(currentExtractedLeads);
-          if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = false;
-          if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = false;
         }
       }
     });
@@ -497,10 +649,11 @@
     if (el.stopBtn) el.stopBtn.classList.remove("hidden");
     if (el.progressContainer) el.progressContainer.classList.remove("hidden");
     if (el.progressBar) el.progressBar.style.width = "5%";
-    if (el.progressText) el.progressText.textContent = "Initiating discovery & automatic enrichment...";
+    if (el.progressText) el.progressText.textContent = "Initiating Maps discovery...";
 
     // Strict State Isolation: Wipe previous leads and enrichment state for fresh search
     currentExtractedLeads = [];
+    activeRunId = null;
     if (enrichAbortController) {
       enrichAbortController.abort();
       enrichAbortController = null;
@@ -514,8 +667,11 @@
     }
     if (el.stopEnrichBtn) el.stopEnrichBtn.classList.add("hidden");
 
+    resetDiscoveryWatchdog();
+
     chrome.runtime.sendMessage({ type: "SI_START_DISCOVERY", limit }, (res) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
+        clearDiscoveryWatchdog();
         const errorDetails = chrome.runtime.lastError
           ? chrome.runtime.lastError.message
           : res?.error || "Initiation failure";
@@ -524,34 +680,79 @@
         if (el.stopBtn) el.stopBtn.classList.add("hidden");
         if (el.progressContainer) el.progressContainer.classList.add("hidden");
         showToast(`Extraction failed: ${errorDetails}`, "error");
+        return;
+      }
+      if (res.runId) {
+        activeRunId = res.runId;
+      }
+      if (res.stats && res.stats.discovered === 0 && (!res.records || res.records.length === 0)) {
+        handleDiscoveryTerminalState({
+          status: "completed",
+          leads: [],
+          stats: res.stats,
+          runId: res.runId,
+        });
       }
     });
   }
 
+  function stopExtraction() {
+    clearDiscoveryWatchdog();
+    chrome.runtime.sendMessage({ type: "SI_STOP_DISCOVERY" }, () => {
+      handleDiscoveryTerminalState({
+        status: "cancelled",
+        leads: currentExtractedLeads,
+      });
+    });
+  }
+
   function triggerMapsExport(format = "xlsx") {
-    chrome.runtime.sendMessage(
-      { type: format === "xlsx" ? "SI_TRIGGER_DOWNLOAD_EXCEL" : "SI_TRIGGER_DOWNLOAD_CSV", format },
-      (res) => {
-        if (chrome.runtime.lastError) {
-          if (currentExtractedLeads.length > 0) {
-            if (format === "xlsx") {
-              triggerXlsxDownload(currentExtractedLeads);
-            } else {
-              triggerCsvDownload(generateCSV(currentExtractedLeads));
-            }
-            showToast(`Exported ${currentExtractedLeads.length} leads.`, "success");
-          } else {
-            showToast(`Export failed: ${chrome.runtime.lastError.message}`, "error");
-          }
-          return;
-        }
-        if (res && res.ok) {
-          showToast(`Exported ${res.rowCount || currentExtractedLeads.length} leads to ${format.toUpperCase()}.`, "success");
-        } else {
-          showToast(res?.error || "No leads available to export.", "error");
-        }
-      }
+    if (!currentExtractedLeads || currentExtractedLeads.length === 0) {
+      showToast("No leads available to export.", "error");
+      return;
+    }
+
+    const isEnriched = currentExtractedLeads.some(
+      (l) => l && (l.enrichment_status === "enriched" || (l.people && l.people.length > 0) || (l.additional_emails && l.additional_emails.length > 0) || (l.social && Object.keys(l.social).length > 0))
     );
+
+    const sanitize = (q) => (q || "google-maps").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `ramos-${sanitize(currentSearchQuery || activeRunId || "google-maps")}-${dateStr}.${format}`;
+
+    if (format === "xlsx") {
+      const XlsxBuilder = window.RamosXlsxBuilder || globalThis.RamosXlsxBuilder;
+      if (!XlsxBuilder) {
+        showToast("Export failed: XLSX Builder unavailable", "error");
+        return;
+      }
+      try {
+        const uint8 = isEnriched && typeof XlsxBuilder.buildWebsiteXlsx === "function"
+          ? XlsxBuilder.buildWebsiteXlsx(currentExtractedLeads)
+          : XlsxBuilder.buildXlsx(currentExtractedLeads);
+        const dataUrl = uint8ToDataUrl(uint8, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        downloadDataUrl(dataUrl, filename, (res) => {
+          if (res && res.ok) {
+            showToast(`Exported ${currentExtractedLeads.length} leads to XLSX${isEnriched ? " (with Enriched fields & People)" : ""}.`, "success");
+          } else {
+            showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+          }
+        });
+      } catch (err) {
+        showToast(`Export failed: ${err.message}`, "error");
+      }
+    } else {
+      const csvStr = isEnriched
+        ? generateWebsiteCSV(currentExtractedLeads)
+        : generateCSV(currentExtractedLeads);
+      triggerCsvDownload(csvStr, filename, (res) => {
+        if (res && res.ok) {
+          showToast(`Exported ${currentExtractedLeads.length} leads to CSV${isEnriched ? " (with Enriched fields)" : ""}.`, "success");
+        } else {
+          showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+        }
+      });
+    }
   }
 
   // ─── WEBSITE ENRICHMENT ORCHESTRATION (Phase 6) ──────────────────────────────
@@ -1115,9 +1316,7 @@
     // Maps Actions
     el.openMapsBtn?.addEventListener("click", () => openGoogleMapsTab());
     el.extractBtn?.addEventListener("click", () => startExtraction());
-    el.stopBtn?.addEventListener("click", () => {
-      chrome.runtime.sendMessage({ type: "SI_STOP_DISCOVERY" });
-    });
+    el.stopBtn?.addEventListener("click", () => stopExtraction());
     el.enrichWebsitesBtn?.addEventListener("click", () => startBatchWebsiteEnrichment());
     el.stopEnrichBtn?.addEventListener("click", () => stopBatchWebsiteEnrichment());
     el.downloadXlsxBtn?.addEventListener("click", () => triggerMapsExport("xlsx"));

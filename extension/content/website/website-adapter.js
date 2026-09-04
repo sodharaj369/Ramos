@@ -530,14 +530,14 @@
     if (bestCandidates.menu_url) lead.menu_url = bestCandidates.menu_url.value;
     if (bestCandidates.price_range) lead.price_range = bestCandidates.price_range.value;
 
-    lead.social = {
-      linkedin: bestCandidates.linkedin ? bestCandidates.linkedin.value : null,
-      twitter_x: bestCandidates.twitter_x ? bestCandidates.twitter_x.value : null,
-      facebook: bestCandidates.facebook ? bestCandidates.facebook.value : null,
-      instagram: bestCandidates.instagram ? bestCandidates.instagram.value : null,
-      youtube: bestCandidates.youtube ? bestCandidates.youtube.value : null,
-      github: bestCandidates.github ? bestCandidates.github.value : null,
-    };
+    const discoveredSocial = {};
+    if (bestCandidates.linkedin && bestCandidates.linkedin.value) discoveredSocial.linkedin = bestCandidates.linkedin.value;
+    if (bestCandidates.twitter_x && bestCandidates.twitter_x.value) discoveredSocial.twitter_x = bestCandidates.twitter_x.value;
+    if (bestCandidates.facebook && bestCandidates.facebook.value) discoveredSocial.facebook = bestCandidates.facebook.value;
+    if (bestCandidates.instagram && bestCandidates.instagram.value) discoveredSocial.instagram = bestCandidates.instagram.value;
+    if (bestCandidates.youtube && bestCandidates.youtube.value) discoveredSocial.youtube = bestCandidates.youtube.value;
+    if (bestCandidates.github && bestCandidates.github.value) discoveredSocial.github = bestCandidates.github.value;
+    lead.social = discoveredSocial;
 
     lead.people = Array.isArray(meta.people) ? meta.people : [];
 
@@ -548,10 +548,16 @@
         .filter(Boolean)
     );
 
+    // Ensure company lead.email does not belong to an employee
+    if (lead.email && employeeEmails.has(lead.email.toLowerCase().trim())) {
+      lead.email = null;
+      lead.email_status = null;
+    }
+
     const emailMap = new Map();
 
     // Primary email if present and not belonging to an employee
-    if (lead.email && !employeeEmails.has(lead.email.toLowerCase().trim())) {
+    if (lead.email) {
       emailMap.set(lead.email.toLowerCase().trim(), {
         email: lead.email,
         type: lead.email_status || "business_role",
@@ -598,6 +604,7 @@
       lead.email = lead.emails[0].email;
       lead.email_status = lead.emails[0].type;
     }
+    lead.additional_emails = lead.emails.slice(1).map((e) => (typeof e === "string" ? e : e.email)).filter(Boolean);
 
     // ─── AGGREGATE ALL VALID CORPORATE PHONES (Preserve All Evidence) ────────
     const employeePhones = new Set(
@@ -606,11 +613,16 @@
         .filter(Boolean)
     );
 
+    // Ensure company lead.phone does not belong to an employee
+    if (lead.phone && employeePhones.has(lead.phone.replace(/\D/g, ""))) {
+      lead.phone = null;
+    }
+
     const phoneMap = new Map();
 
     if (lead.phone) {
       const digits = lead.phone.replace(/\D/g, "");
-      if (digits && !employeePhones.has(digits)) {
+      if (digits) {
         phoneMap.set(digits, {
           phone: lead.phone,
           confidence: bestCandidates.phone?.confidence ?? 0.90,
@@ -653,10 +665,11 @@
     if (!lead.phone && lead.phones.length > 0) {
       lead.phone = lead.phones[0].phone;
     }
+    lead.additional_phones = lead.phones.slice(1).map((p) => (typeof p === "string" ? p : p.phone)).filter(Boolean);
 
     // Deterministic representation for additional values and people in existing canonical schema
-    const extraEmails = lead.emails.slice(1).map((e) => e.email);
-    const extraPhones = lead.phones.slice(1).map((p) => p.phone);
+    const extraEmails = lead.additional_emails;
+    const extraPhones = lead.additional_phones;
     const peopleList = (lead.people || []).map((p) => p.name + (p.title ? ` (${p.title})` : ""));
     const extras = [];
     if (extraEmails.length > 0) extras.push(`Additional Emails: ${extraEmails.join(", ")}`);

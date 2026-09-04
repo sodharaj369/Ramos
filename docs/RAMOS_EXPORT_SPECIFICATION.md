@@ -3,6 +3,10 @@
 ## Executive Summary
 This document specifies the authoritative state contract, CSV export format, OpenXML XLSX Excel export architecture, popup state reconstruction rules, and test verification suite for **RAMOS – Maps Lead Extractor (v1.0.5)**.
 
+RAMOS supports **two export pipelines**:
+- **Maps Canonical Export** — 24-column CSV/XLSX, frozen, unchanged.
+- **Website Intelligence Export** — 26-column CSV + 2-sheet XLSX (Leads + People), including social platform URLs.
+
 ---
 
 ## 1. OOXML Strict Excel Compatibility Fixes (v1.0.5)
@@ -79,3 +83,58 @@ Systematic OOXML structural analysis revealed 6 specific defects in the generate
 - `1.0.3` — Critical XLSX Export Regression Fix (100% Browser-Native `Uint8Array` / `TextEncoder` primitives, zero `Buffer` reliance).
 - `1.0.4` — XLSX Readability Polish (Deliberate column widths, wrapped headers, alternating rows).
 - `1.0.5` — Critical XLSX OpenXML Validation Bug Fix (ECMA-376 OOXML Strict Schema Compliance, `numFmts` declaration, `xml:space="preserve"`, valid Zip timestamps).
+
+---
+
+## 5. Website Intelligence Export Format
+
+### 5.1 CSV — 26 Columns (`generateWebsiteCSV`)
+
+Website Intelligence results are exported using a **dedicated CSV format** with 26 columns, distinct from the frozen Maps 24-column format:
+
+```text
+Col  1: Company             Col 10: Country             Col 19: YouTube
+Col  2: Website             Col 11: Postal Code          Col 20: GitHub
+Col  3: Primary Email       Col 12: Industry             Col 21: Booking URL
+Col  4: Additional Emails   Col 13: Description          Col 22: Ordering URL
+Col  5: Email Status        Col 14: LinkedIn             Col 23: Menu URL
+Col  6: Primary Phone       Col 15: Twitter / X          Col 24: Source URL
+Col  7: Additional Phones   Col 16: Facebook             Col 25: Imported At
+Col  8: Address             Col 17: Instagram            Col 26: Source Query
+Col  9: City / State/Region Col 18: YouTube
+```
+
+- Social columns (LinkedIn, Twitter / X, Facebook, Instagram, YouTube, GitHub) contain the **actual discovered URLs** — never fabricated.
+- Empty social cells are left blank; no placeholder text.
+- Additional Emails and Additional Phones contain secondary discovered contacts separated by `"; "`.
+
+### 5.2 XLSX — 2-Sheet Workbook (`buildWebsiteXlsx`)
+
+Website Intelligence `.xlsx` exports produce a **2-sheet workbook**:
+
+**Sheet 1 — "Leads"** (26 columns, same as CSV above):
+- LinkedIn, Twitter/X, Facebook, Instagram, YouTube, GitHub rendered as clickable hyperlinks.
+- Additional Emails / Additional Phones in dedicated columns.
+
+**Sheet 2 — "People"** (7 columns):
+```text
+Col 1: Company   Col 2: Name   Col 3: Title   Col 4: Email
+Col 5: Phone     Col 6: LinkedIn               Col 7: Profile URL
+```
+- One row per extracted person (leadership, team members).
+- If no people were detected, one placeholder row `(No people detected)` is written.
+
+### 5.3 Implementation
+
+| Function | File | Purpose |
+|---|---|---|
+| `generateWebsiteCSV(leads)` | `extension/popup.js` | Website 26-column CSV |
+| `websiteLeadToCsvRow(l)` | `extension/popup.js` | Row mapper with social |
+| `buildWebsiteXlsx(leads)` | `extension/shared/xlsx-builder.js` | 2-sheet XLSX builder |
+| `buildXlsx(leads)` | `extension/shared/xlsx-builder.js` | Maps 24-col XLSX (unchanged) |
+| `generateCSV(leads)` | `extension/popup.js` | Maps 24-col CSV (unchanged) |
+
+### 5.4 Download Pipeline
+
+Both CSV and XLSX use the unified **`SI_DOWNLOAD_FILE` → background service worker → `chrome.downloads.download`** pipeline (Data URI approach) to bypass Manifest V3 process isolation between popup and background contexts. Blob URLs are NOT used (they fail across process boundaries in MV3).
+

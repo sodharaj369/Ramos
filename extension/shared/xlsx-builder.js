@@ -532,12 +532,16 @@
     // Build Leads sheet rows
     const leadsRows = validLeads.map((l) => {
       const social = l.social || {};
-      const extraEmails = Array.isArray(l.emails) && l.emails.length > 1
-        ? l.emails.slice(1).map((e) => e.email || e).join("; ")
-        : "";
-      const extraPhones = Array.isArray(l.phones) && l.phones.length > 1
-        ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
-        : "";
+      const extraEmails = Array.isArray(l.additional_emails) && l.additional_emails.length > 0
+        ? l.additional_emails.join("; ")
+        : (Array.isArray(l.emails) && l.emails.length > 1
+          ? l.emails.slice(1).map((e) => e.email || e).join("; ")
+          : "");
+      const extraPhones = Array.isArray(l.additional_phones) && l.additional_phones.length > 0
+        ? l.additional_phones.join("; ")
+        : (Array.isArray(l.phones) && l.phones.length > 1
+          ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
+          : "");
       return [
         l.company_name || l.website || "—",
         l.website,

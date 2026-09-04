@@ -47,6 +47,7 @@
       isResults,
       query,
       detected,
+      cardCount: detected,
       url: currentUrl,
     };
   }
@@ -94,10 +95,35 @@
     const query = (ad ? ad.currentQuery() : "") || "";
 
     console.log(`[SI][DISCOVERY_TEST][RUN_START] query="${query}" requestedLimit=${requestedLimit}`);
-    const cardElements = ad ? ad.getQualifiedCardElements() : [];
+    let cardElements = ad ? ad.getQualifiedCardElements() : [];
     console.log(`[SI][DISCOVERY_TEST][CARDS_DETECTED] count=${cardElements.length}`);
 
-    const { element: container, selector: feedSelector } = findScrollableResultsContainer();
+    let { element: container, selector: feedSelector } = findScrollableResultsContainer();
+
+    // Bounded wait for delayed cards: if 0 cards detected and container is missing,
+    // wait up to 3500ms (polling ~350ms) to allow dynamic Maps results to render
+    if (cardElements.length === 0 && !container) {
+      console.log(`[SI][DISCOVERY] WAITING_FOR_RESULTS...`);
+      const maxWaitMs = 3500;
+      const pollInterval = 350;
+      let waitedMs = 0;
+      while (waitedMs < maxWaitMs) {
+        await sleep(pollInterval);
+        waitedMs += pollInterval;
+        cardElements = ad ? ad.getQualifiedCardElements() : [];
+        const found = findScrollableResultsContainer();
+        container = found.element;
+        feedSelector = found.selector;
+        if (cardElements.length > 0 || container) {
+          console.log(`[SI][DISCOVERY] Results rendered after ${waitedMs}ms (cards=${cardElements.length})`);
+          break;
+        }
+      }
+      if (cardElements.length === 0 && !container) {
+        console.log(`[SI][DISCOVERY] WAITING_FOR_RESULTS timeout reached (${maxWaitMs}ms). 0 results confirmed.`);
+      }
+    }
+
     const candidateMap = new Map();
 
     function scanVisibleCards() {
@@ -402,7 +428,7 @@
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!message || typeof message.type !== "string") return;
 
-      if (message.type === "SI_PAGE_STATE") {
+      if (message.type === "SI_PAGE_STATE" || message.type === "SI_DETECT_QUERY") {
         sendResponse(getCurrentPageState());
         return true;
       }

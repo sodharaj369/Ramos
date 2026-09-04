@@ -102,9 +102,11 @@ interface FieldEvidence<T> {
 
 ---
 
-## 3. Canonical Export Mapping
+## 3. Export Mapping Reference
 
-To preserve compatibility with the frozen RAMOS Canonical Exporter (`CSV` and `XLSX`), website extracted fields map directly into the existing 24-column layout:
+### 3.1 Maps Canonical Export (24 columns) — FROZEN
+
+Maps leads export into the fixed 24-column layout via `buildXlsx()` / `generateCSV()`:
 
 | Export Column | RAMOS Lead Field | Website Extractor Source |
 | :--- | :--- | :--- |
@@ -125,3 +127,56 @@ To preserve compatibility with the frozen RAMOS Canonical Exporter (`CSV` and `X
 | **Menu URL** | `menu_url` | Discovered `menu_url` |
 | **Source URL** | `source_url` | Visited root URL |
 | **Source Query** | `sourceQuery` | User input URL or domain |
+
+> Social profiles (`lead.social`), People (`lead.people`), and evidence provenance (`lead._provenance`) are attached to the lead object but intentionally **not mapped into the 24 Maps columns** to preserve backward compatibility.
+
+---
+
+### 3.2 Website Intelligence Export (26 columns + People sheet)
+
+Website Intelligence leads export via `buildWebsiteXlsx()` / `generateWebsiteCSV()`:
+
+**Sheet 1 — "Leads" (26 columns):**
+
+| # | Column | Lead Field |
+|---|---|---|
+| 1 | Company | `company_name \|\| website` |
+| 2 | Website | `website` |
+| 3 | Primary Email | `email` |
+| 4 | Additional Emails | `emails[1+].email` joined by `"; "` |
+| 5 | Email Status | `email_status` |
+| 6 | Primary Phone | `phone` |
+| 7 | Additional Phones | `phones[1+].phone` joined by `"; "` |
+| 8 | Address | `address` |
+| 9 | City | `city` |
+| 10 | State / Region | `region` |
+| 11 | Country | `country` |
+| 12 | Postal Code | `postal_code` |
+| 13 | Industry | `category` |
+| 14 | Description | `business_type` |
+| 15 | **LinkedIn** | `social.linkedin` |
+| 16 | **Twitter / X** | `social.twitter_x` |
+| 17 | **Facebook** | `social.facebook` |
+| 18 | **Instagram** | `social.instagram` |
+| 19 | **YouTube** | `social.youtube` |
+| 20 | **GitHub** | `social.github` |
+| 21 | Booking URL | `booking_url` |
+| 22 | Ordering URL | `ordering_url` |
+| 23 | Menu URL | `menu_url` |
+| 24 | Source URL | `source_url` |
+| 25 | Imported At | `imported_at` |
+| 26 | Source Query | `sourceQuery` |
+
+**Sheet 2 — "People" (7 columns):**
+
+| # | Column | Person Field |
+|---|---|---|
+| 1 | Company | `lead.company_name \|\| website` |
+| 2 | Name | `person.name` |
+| 3 | Title | `person.title` |
+| 4 | Email | `person.email` |
+| 5 | Phone | `person.phone` |
+| 6 | LinkedIn | `person.linkedin_url` |
+| 7 | Profile URL | `person.profile_url \|\| linkedin_url` |
+
+

@@ -17,26 +17,29 @@
   // URL Path Weight Rules (Ranked by business intelligence value)
   const PATH_RULES = [
     { regex: /\/(contact|contact-us|reach-us|get-in-touch|contactus|connect|touch|write-to-us|talk-to-us|customer-service)\b/i, score: 120, label: "CONTACT" },
-    { regex: /\/(team|our-team|leadership|people|our-people|meet-the-team|meet-our-team|staff|management|executives|board|directors|advisors)\b/i, score: 110, label: "TEAM" },
-    { regex: /\/(about|about-us|aboutus|who-we-are|our-story|company|overview|corporate|mission|profile)\b/i, score: 90, label: "ABOUT" },
+    { regex: /\/(about|about-us|aboutus|who-we-are|our-story|company|overview|corporate|mission|profile)\b/i, score: 105, label: "ABOUT" },
+    { regex: /\/(team|our-team|leadership|people|our-people|meet-the-team|meet-our-team|staff|management|executives|board|directors|advisors)\b/i, score: 100, label: "TEAM" },
     { regex: /\/(locations|location|stores|branches|find-us|our-locations|offices|headquarters|office|store-locator)\b/i, score: 80, label: "LOCATION" },
-    { regex: /\/(services|our-services|products|solutions|what-we-do|offerings|capabilities|menu|pricing)\b/i, score: 50, label: "SERVICES" },
-    { regex: /\/(careers|jobs|join-us|work-with-us|opportunities)\b/i, score: 35, label: "CAREERS" },
-    { regex: /\/(faq|help|support|client-support|help-center)\b/i, score: 25, label: "SUPPORT" },
-    { regex: /\/(blog|news|articles|press|media|posts|insights|updates|events)\b/i, score: 5, label: "BLOG" },
-    { regex: /\/(tag|category|author|page\/\d+|archive|\/\d{4}\/\d{2})\b/i, score: -40, label: "PAGINATION" },
-    { regex: /\/(privacy|terms|legal|disclaimer|cookies|cookie-policy|privacy-policy|terms-of-service|terms-of-use|tos)\b/i, score: -80, label: "LEGAL" },
+    { regex: /\/(services|our-services|products|solutions|what-we-do|offerings|capabilities|menu|pricing)\b/i, score: 60, label: "SERVICES" },
+    { regex: /\/(careers|jobs|join-us|work-with-us|opportunities)\b/i, score: 30, label: "CAREERS" },
+    { regex: /\/(faq|help|support|client-support|help-center)\b/i, score: 20, label: "SUPPORT" },
+    { regex: /\/(blog|news|articles|press|media|posts|insights|updates|events)\b/i, score: -20, label: "BLOG" },
+    { regex: /\/(tag|category|author|page\/\d+|archive|\/\d{4}\/\d{2})\b/i, score: -50, label: "PAGINATION" },
+    { regex: /\/(cart|checkout|basket|my-account|account|login|signin|signup|register|password-reset)\b/i, score: -90, label: "COMMERCE_AUTH" },
+    { regex: /\/(privacy|terms|legal|disclaimer|cookies|cookie-policy|privacy-policy|terms-of-service|terms-of-use|tos)\b/i, score: -90, label: "LEGAL" },
   ];
 
   // Anchor Text Weight Rules
   const ANCHOR_RULES = [
     { regex: /\b(contact(\s*us)?|get in touch|reach us|talk to us|speak with us|write to us|connect with us)\b/i, bonus: 100 },
-    { regex: /\b(our people|meet the team|meet our team|our team|leadership|executive team|management|people|team)\b/i, bonus: 90 },
-    { regex: /\b(about(\s*us)?|who we are|our story|company overview|about the company)\b/i, bonus: 80 },
+    { regex: /\b(about(\s*us)?|who we are|our story|company overview|about the company)\b/i, bonus: 90 },
+    { regex: /\b(our people|meet the team|meet our team|our team|leadership|executive team|management|people|team)\b/i, bonus: 85 },
     { regex: /\b(find us|find a location|our locations|branches|stores|offices|headquarters)\b/i, bonus: 75 },
-    { regex: /\b(our services|what we do|products|solutions|capabilities)\b/i, bonus: 40 },
-    { regex: /\b(careers|join our team|join us|work with us)\b/i, bonus: 25 },
-    { regex: /\b(privacy policy|terms of service|terms & conditions|cookie preferences|legal notices)\b/i, bonus: -90 },
+    { regex: /\b(our services|what we do|products|solutions|capabilities)\b/i, bonus: 50 },
+    { regex: /\b(careers|join our team|join us|work with us)\b/i, bonus: 20 },
+    { regex: /\b(cart|checkout|login|sign in|my account|register)\b/i, bonus: -100 },
+    { regex: /\b(privacy policy|terms of service|terms & conditions|cookie preferences|legal notices)\b/i, bonus: -100 },
+    { regex: /\b(blog|news|latest posts)\b/i, bonus: -30 },
   ];
 
   /**

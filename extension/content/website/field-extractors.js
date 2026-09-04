@@ -111,13 +111,18 @@
         if (platform.domainRegex.test(href)) {
           if (!seenSocials.has(href)) {
             seenSocials.add(href);
+            let conf = 0.92;
+            if (platform.key === "linkedin") {
+              const isOrg = /linkedin\.com\/(?:company|school)\//i.test(href);
+              conf = isOrg ? 0.95 : 0.85;
+            }
             candidates.push({
               field: platform.key,
               value: href,
               source: "semantic-dom",
               evidence_type: `social-link-${platform.key}`,
               page_url: pageUrl,
-              confidence: 0.92,
+              confidence: conf,
             });
           }
         }

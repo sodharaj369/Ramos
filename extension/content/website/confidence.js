@@ -98,6 +98,16 @@
       }
     }
 
+    // Prefer corporate social profiles over employee individual profiles for company social
+    if (candidate.field === "linkedin") {
+      const isOrg = /linkedin\.com\/(?:company|school)\//i.test(String(candidate.value));
+      if (isOrg) {
+        score += 0.15;
+      } else if (/\/in\//i.test(String(candidate.value))) {
+        score -= 0.10;
+      }
+    }
+
     return Math.max(0.0, Math.min(1.0, Math.round(score * 1000) / 1000));
   }
 

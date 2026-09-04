@@ -263,7 +263,63 @@ function createCsv(leads) {
   return "\uFEFF" + rows.join("\r\n");
 }
 
-function executeExportDownload(customSendResponse, format = "csv") {
+function createEnrichedCsv(leads) {
+  const ENRICHED_CSV_HEADERS = [
+    "Company", "Website", "Primary Email", "Additional Emails", "Email Status",
+    "Primary Phone", "Additional Phones",
+    "Address", "City", "State / Region", "Country", "Postal Code",
+    "Industry", "Description",
+    "LinkedIn", "Twitter / X", "Facebook", "Instagram", "YouTube", "GitHub",
+    "Booking URL", "Ordering URL", "Menu URL",
+    "Source URL", "Imported At", "Source Query"
+  ];
+  const rows = [ENRICHED_CSV_HEADERS.join(",")];
+  for (const l of leads) {
+    if (!l || (!l.company_name && !l.website && !l.email && !l.phone)) continue;
+    const social = l.social || {};
+    const extraEmails = Array.isArray(l.additional_emails) && l.additional_emails.length > 0
+      ? l.additional_emails.join("; ")
+      : (Array.isArray(l.emails) && l.emails.length > 1
+        ? l.emails.slice(1).map((e) => e.email || e).join("; ")
+        : "");
+    const extraPhones = Array.isArray(l.additional_phones) && l.additional_phones.length > 0
+      ? l.additional_phones.join("; ")
+      : (Array.isArray(l.phones) && l.phones.length > 1
+        ? l.phones.slice(1).map((p) => p.phone || p).join("; ")
+        : "");
+    rows.push([
+      escapeCsvCell(l.company_name || l.website || "—"),
+      escapeCsvCell(l.website),
+      escapeCsvCell(l.email),
+      escapeCsvCell(extraEmails),
+      escapeCsvCell(l.email_status),
+      escapeCsvCell(l.phone),
+      escapeCsvCell(extraPhones),
+      escapeCsvCell(l.address),
+      escapeCsvCell(l.city),
+      escapeCsvCell(l.region || l.state),
+      escapeCsvCell(l.country),
+      escapeCsvCell(l.postal_code),
+      escapeCsvCell(l.category),
+      escapeCsvCell(l.description || l.business_type || ""),
+      escapeCsvCell(social.linkedin || ""),
+      escapeCsvCell(social.twitter_x || ""),
+      escapeCsvCell(social.facebook || ""),
+      escapeCsvCell(social.instagram || ""),
+      escapeCsvCell(social.youtube || ""),
+      escapeCsvCell(social.github || ""),
+      escapeCsvCell(l.booking_url),
+      escapeCsvCell(l.ordering_url),
+      escapeCsvCell(l.menu_url),
+      escapeCsvCell(l.source_url),
+      escapeCsvCell(l.imported_at || new Date().toISOString()),
+      escapeCsvCell(l.sourceQuery)
+    ].join(","));
+  }
+  return "\uFEFF" + rows.join("\r\n");
+}
+
+function executeExportDownload(customSendResponse, format = "csv", providedLeads = null) {
   console.log(`[SI][EXPORT_FLOW][CLICK] runId=${currentRun.runId} status=${currentRun.status} format=${format}`);
 
   if (currentRun.exportInProgress) {
@@ -284,18 +340,11 @@ function executeExportDownload(customSendResponse, format = "csv") {
 
   const exportRunId = currentRun.runId;
   const sourceQuery = currentRun.sourceQuery || "google-maps";
-  const leads = getExportableLeads();
+  const leads = Array.isArray(providedLeads) && providedLeads.length > 0 ? providedLeads : getExportableLeads();
 
   console.log(
     `[SI][EXPORT][FINAL_INPUT]\nrequested=${currentRun.requestedLimit}\nresultsLength=${(currentRun.results || []).length}\nready=${leads.length}\nexportable=${leads.length}`
   );
-
-  for (let i = 0; i < leads.length; i++) {
-    const row = leads[i];
-    console.log(
-      `[SI][EXPORT][ROW]\nindex=${i + 1}\ncandidateIndex=${row.candidateIndex != null ? row.candidateIndex + 1 : i + 1}\nname=${row.company_name || ""}\nphone=${row.phone || ""}\nwebsite=${row.website || ""}\naddress=${row.address || ""}`
-    );
-  }
 
   if (leads.length === 0) {
     console.warn(`[SI][EXPORT_FLOW][CLICK] no exportable leads found`);
@@ -304,6 +353,10 @@ function executeExportDownload(customSendResponse, format = "csv") {
     }
     return;
   }
+
+  const isEnriched = leads.some(
+    (l) => l && (l.enrichment_status === "enriched" || (l.people && l.people.length > 0) || (l.additional_emails && l.additional_emails.length > 0) || (l.social && Object.keys(l.social).length > 0))
+  );
 
   currentRun.exportInProgress = true;
   const sanitize = (q) => (q || "google-maps").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -331,7 +384,9 @@ function executeExportDownload(customSendResponse, format = "csv") {
     }
 
     try {
-      const uint8 = xlsxBuilder.buildXlsx(leads);
+      const uint8 = isEnriched && typeof xlsxBuilder.buildWebsiteXlsx === "function"
+        ? xlsxBuilder.buildWebsiteXlsx(leads)
+        : xlsxBuilder.buildXlsx(leads);
       let binary = "";
       for (let i = 0; i < uint8.length; i++) {
         binary += String.fromCharCode(uint8[i]);
@@ -348,7 +403,7 @@ function executeExportDownload(customSendResponse, format = "csv") {
       return;
     }
   } else {
-    const csv = createCsv(leads);
+    const csv = isEnriched ? createEnrichedCsv(leads) : createCsv(leads);
     dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
   }
 
@@ -359,7 +414,7 @@ function executeExportDownload(customSendResponse, format = "csv") {
       {
         url: dataUrl,
         filename: filename,
-        saveAs: true,
+        saveAs: false,
       },
       (downloadId) => {
         currentRun.exportInProgress = false;
@@ -423,17 +478,67 @@ function getRunStats() {
 
 function broadcastProgress(statusText) {
   const readyLeads = getExportableLeads();
-  safeSendRuntimeMessage({
+  const total = currentRun.candidates.length;
+  const processed = readyLeads.length;
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+
+  const progressPayload = {
     type: "SI_DISCOVERY_PROGRESS",
     status: currentRun.status,
-    found: currentRun.candidates.length,
-    processed: readyLeads.length,
+    found: total,
+    processed,
+    percent: pct,
     stats: getRunStats(),
     currentBusiness: currentRun.readyLeads[currentRun.readyLeads.length - 1] || null,
     records: readyLeads,
+    leads: readyLeads,
     runId: currentRun.runId,
     statusText,
+    text: statusText,
+  };
+
+  // 1. Maintain primary backward-compatible contract
+  safeSendRuntimeMessage(progressPayload);
+
+  // 2. Broadcast modern SI_PROGRESS_UPDATE for UI listeners
+  safeSendRuntimeMessage({
+    ...progressPayload,
+    type: "SI_PROGRESS_UPDATE",
   });
+
+  // 3. Broadcast terminal event when status reaches completed/cancelled/failed
+  if (currentRun.status === "completed") {
+    safeSendRuntimeMessage({
+      type: "SI_DISCOVERY_COMPLETE",
+      status: "completed",
+      leads: readyLeads,
+      records: readyLeads,
+      stats: getRunStats(),
+      runId: currentRun.runId,
+      statusText,
+    });
+  } else if (currentRun.status === "cancelled") {
+    safeSendRuntimeMessage({
+      type: "SI_DISCOVERY_STOPPED",
+      status: "cancelled",
+      leads: readyLeads,
+      records: readyLeads,
+      stats: getRunStats(),
+      runId: currentRun.runId,
+      statusText,
+    });
+  } else if (currentRun.status === "failed") {
+    safeSendRuntimeMessage({
+      type: "SI_DISCOVERY_COMPLETE",
+      status: "failed",
+      leads: readyLeads,
+      records: readyLeads,
+      stats: getRunStats(),
+      runId: currentRun.runId,
+      error: statusText,
+      statusText,
+    });
+  }
 }
 
 async function ensureContentScriptInjected(tabId) {
@@ -897,6 +1002,7 @@ async function startDiscoverySession(tabId, limit, queryOverride) {
       requestedLimit: currentRun.requestedLimit
     });
     currentRun.status = "failed";
+    broadcastProgress(`Discovery failed: ${errReason}`);
     return { ok: false, error: errReason };
   }
 
@@ -946,7 +1052,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     message.type === "DOWNLOAD_EXCEL"
   ) {
     const fmt = message.format || (message.type.includes("EXCEL") || message.type.includes("XLSX") ? "xlsx" : "csv");
-    executeExportDownload(sendResponse, fmt);
+    executeExportDownload(sendResponse, fmt, message.leads);
     return true;
   }
 
@@ -1078,9 +1184,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  // --- SI_DOWNLOAD_FILE ---
+  if (message.type === "SI_DOWNLOAD_FILE") {
+    if (typeof chrome !== "undefined" && chrome.downloads && typeof chrome.downloads.download === "function") {
+      try {
+        chrome.downloads.download({ url: message.url, filename: message.filename, saveAs: false }, (downloadId) => {
+          if (chrome.runtime.lastError) {
+            console.error("[SI][DOWNLOAD_ERROR]", chrome.runtime.lastError.message);
+            sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+          } else {
+            console.log(`[SI][DOWNLOAD_SUCCESS] id=${downloadId} file=${message.filename}`);
+            sendResponse({ ok: true, downloadId });
+          }
+        });
+        return true;
+      } catch (err) {
+        console.error("[SI][DOWNLOAD_EXCEPTION]", err);
+        sendResponse({ ok: false, error: err.message });
+        return false;
+      }
+    }
+    sendResponse({ ok: false, error: "chrome.downloads API unavailable" });
+    return false;
+  }
+
   // --- SI_TRIGGER_DOWNLOAD_CSV / SI_EXPORT_CSV ---
   if (message.type === "SI_TRIGGER_DOWNLOAD_CSV" || message.type === "SI_EXPORT_CSV") {
-    executeExportDownload(sendResponse);
+    executeExportDownload(sendResponse, message.leads);
     return true;
   }
 
