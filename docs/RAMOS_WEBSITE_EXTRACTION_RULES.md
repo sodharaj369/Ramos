@@ -1,13 +1,21 @@
 # RAMOS Website Extraction & Priority Rules
 
-## 1. Core Principles
+**Current Version:** `v1.0.6`  
+**Current Phase:** Phase 9 (Release Candidate / Pilot Ready)  
+**Status:** **CODE FROZEN**  
+**Next Phase:** Phase 10 (Multi-Website & Corporate Relationship Intelligence — PLANNED)
 
-RAMOS Website Extraction follows a strict **Evidence-Based Extraction Model**.
+---
+
+## 1. Core Extraction Principles
+
+RAMOS Website Extraction follows a strict **Evidence-Based Extraction Model**:
 
 1. **Accuracy Over Completeness**: A verified empty field is infinitely better than an incorrect or fabricated field.
 2. **Deterministic Confidence**: Every extracted field must be accompanied by an evidence trace and confidence score ($0.00$ to $1.00$).
 3. **No Selector Fragility**: Extraction strategies must not rely on generated classes (e.g. `css-1x8zq`) or unstable DOM paths.
 4. **Zero Contamination**: Data from third-party widgets, adverts, footer copyright notices for web agencies, or social media share buttons must be isolated and rejected.
+5. **Strict Personal Contact Isolation**: Direct employee emails and phones found on personal/leadership cards attach strictly to `lead.people` and `lead.decision_maker_*`. They are **never** attributed to company primary contacts (`lead.email` or `lead.phone`).
 
 ---
 
@@ -36,80 +44,121 @@ When extracting fields, candidates are evaluated from the following sources in d
 - **Tier 4**: `header .logo img[alt]` or `header h1`
 - **Exclusion Filters**: Filter out generic titles like "Home", "Welcome", "Homepage", "Index".
 
-### 3.2 Email Address
-- **Tier 1**: `JSON-LD -> email` or `ContactPoint.email`
-- **Tier 2**: `a[href^="mailto:"]` links (strip query parameters like `?subject=...`)
-- **Tier 3**: Labelled text near `"Email:"`, `"Contact:"`, `"Write to us:"`
-- **Tier 4**: Body text regex matching standard RFC 5322 compliant email patterns
-- **Exclusion Filters**:
-  - Image files: `user@domain.png`, `icon@2x.png`
-  - Template dummy placeholders: `example@example.com`, `user@domain.com`, `test@test.com`, `name@email.com`
-  - Web design agency signatures: `designed by info@webdesign.com`
-  - Sentry/bug tracking: `sentry.io`, `wixpress.com`, `shopify.com` internal emails
+### 3.2 Corporate Emails & Multi-Contact Handling
+- **Discovery Sources**: `mailto:` links, JSON-LD `email`, `/contact` page semantic blocks, body text regex.
+- **Classification (`evaluateEmail`)**:
+  - `business_role`: Role accounts (`info@`, `sales@`, `contact@`, `support@`, `hello@`, `team@`, `admin@`).
+  - `business_individual`: Custom domain personal email (`john.doe@company.com`).
+  - `freemail`: Common public domains (`gmail.com`, `yahoo.com`, `outlook.com`). Freemail receives a confidence penalty unless anchored in JSON-LD or direct mailto.
+  - `disposable`: Temporary domains; strictly rejected.
+- **Role Account Priority**:
+  - `sales`: $+0.15$ bonus (highest commercial value)
+  - `general` (`info@`, `contact@`, `hello@`): $+0.08$ bonus
+  - `support`: $+0.02$ bonus
+  - `marketing`: $-0.02$ penalty
+  - `careers`: $-0.10$ penalty
+- **Multi-Email Preservation**:
+  - All valid company emails are preserved in `lead.emails[]`.
+  - The top-ranked email becomes `lead.email`.
+  - Secondary emails are preserved in `lead.additional_emails[]`.
+- **Exclusion Filters**: Image assets (`user@2x.png`), dummy templates (`example@example.com`), web agency signatures (`designed by agency@web.com`).
 
-### 3.3 Phone Number
-- **Tier 1**: `JSON-LD -> telephone` or `ContactPoint.telephone`
-- **Tier 2**: `a[href^="tel:"]` links (sanitized to remove whitespace and special characters)
-- **Tier 3**: `<address>` block phone numbers
-- **Tier 4**: Labelled text near `"Phone:"`, `"Call:"`, `"Tel:"`, `"WhatsApp:"`
-- **Tier 5**: Text pattern matching national / international phone notations
+### 3.3 Corporate Phones & Multi-Phone Handling
+- **Discovery Sources**: `tel:` links, JSON-LD `telephone`, `<address>` tag, labelled text near `"Phone:"`, `"Call:"`, `"Tel:"`.
 - **Validation**:
   - Must contain between 7 and 18 digits.
-  - Must not match common invalid sequences (e.g. `123456789`, `0000000000`, `9999999999`).
-  - Must be preserved as text in exports to prevent leading zero truncation.
+  - Repetitive digits (`0000000000`, `9999999999`) or sequential patterns (`123456789`) are rejected.
+  - Preserved as text in exports to prevent leading zero truncation.
+- **Multi-Phone Preservation**:
+  - Multiple distinct company phone numbers are retained in `lead.phones[]`.
+  - The highest confidence phone becomes `lead.phone`.
+  - Secondary phones are preserved in `lead.additional_phones[]`.
 
-### 3.4 Physical Address, City, State, Country, Postal Code
-- **Tier 1**: `JSON-LD -> address` (`PostalAddress` object with `streetAddress`, `addressLocality`, `addressRegion`, `postalCode`, `addressCountry`)
-- **Tier 2**: `<address>` tag in footer or contact section
-- **Tier 3**: Microdata `itemprop="address"`
-- **Tier 4**: Labelled block near `"Office:"`, `"Address:"`, `"Visit us:"`
-- **Parsing**: Passed through RAMOS Address Parser to segment `city`, `region`, `country`, and `postal_code`.
+### 3.4 Physical Address & Location
+- **Discovery Sources**: JSON-LD `PostalAddress`, `<address>` tag, labelled blocks near `"Office:"`, `"Address:"`, `"Visit us:"`.
+- **Address Parsing**: Passed through RAMOS Address Parser to segment `city`, `region`, `country`, and `postal_code`.
 
 ### 3.5 Social Media Profiles
 - **Allowed Platforms**:
-  - **LinkedIn**: `linkedin.com/company/...` or `linkedin.com/in/...`
-  - **Instagram**: `instagram.com/...` (excluding `/p/`, `/stories/`, `/explore/`)
-  - **Facebook**: `facebook.com/...` (excluding `/sharer/`, `/events/`, `/share.php`)
-  - **Twitter / X**: `twitter.com/...` or `x.com/...` (excluding `/intent/`, `/share`)
-  - **YouTube**: `youtube.com/@...` or `youtube.com/channel/...` or `youtube.com/c/...`
-- **Validation**:
-  - Remove URL tracking parameters (`?ref=...`, `?utm_source=...`, `?trk=...`).
-  - Must point to the business/person entity, not platform utility URLs (e.g. login, terms, share).
-
-### 3.6 People & Team Extraction
-- **Scope**: Targeted to pages matching `/team`, `/about`, `/people`, `/leadership`, `/our-team`, `/staff`.
-- **Criteria**:
-  - A person candidate requires a structural card/container containing:
-    - **Full Name** (2-4 words, capitalized, no corporate words like "Inc", "LLC", "Ltd", "Solutions")
-    - **Title / Role** (e.g. "CEO", "Founder", "Managing Director", "VP of Sales", "Head of Engineering")
-  - Optional associated fields: Profile URL, Person LinkedIn URL, Direct Email, Direct Phone.
-- **Rule**: Do not infer employee identity from standalone mentions in blog posts or press releases.
+  - **LinkedIn**: `linkedin.com/company/...` or `linkedin.com/school/...` (individual `linkedin.com/in/...` profiles are routed to People).
+  - **Twitter / X**: `twitter.com/{handle}` or `x.com/{handle}` (excluding `/intent/`, `/share`).
+  - **Facebook**: `facebook.com/{page}` (excluding `/sharer/`, `/events/`).
+  - **Instagram**: `instagram.com/{handle}` (excluding `/p/`, `/stories/`).
+  - **YouTube**: `youtube.com/@...` or `youtube.com/channel/...` or `youtube.com/c/...`.
+  - **GitHub**: `github.com/{org}`.
+- **Validation**: Tracking query parameters (`?ref=...`, `?utm_source=...`) are stripped; non-profile utility URLs are rejected.
 
 ---
 
-## 4. Confidence Scoring Formula
+## 4. People & Decision Maker Extraction Rules
 
-Confidence score $C$ for a candidate is computed as:
+### 4.1 Discovery & Verification
+- **Target Pages**: `/team`, `/about`, `/people`, `/leadership`, `/our-team`, `/staff`, `/management`, `/board`.
+- **Extraction Requirements**:
+  - Candidate must be enclosed in a structured team card or Schema.org `Person` node.
+  - Must contain a valid capitalized full name (2–4 words; non-name tokens like "Team", "Inc", "LLC", "Read More" rejected).
+  - Job title must match legitimate executive/professional keywords (tested against `TITLE_REGEX`).
+  - Direct LinkedIn profile link (`linkedin.com/in/...`), direct email, and direct phone are extracted if present inside the card.
 
-$$C = \min\left(1.0, \quad W_{\text{source}} + B_{\text{context}} + B_{\text{validation}} - P_{\text{distance}}\right)$$
+### 4.2 Seniority Scoring & Ranking
+`people-extractor.js` scores every extracted person by organizational seniority:
+- **Tier 1 (Score: 1.00)**: Ownership & Top Executive (`Founder`, `Co-Founder`, `Owner`, `CEO`, `President`, `Managing Director`, `Managing Partner`, `Principal`).
+- **Tier 2 (Score: 0.90)**: Other C-Suite (`COO`, `CFO`, `CTO`, `CMO`, `CRO`, `CIO`).
+- **Tier 4 (Score: 0.85)**: Vice Presidents (`Vice President`, `VP`, `SVP`, `EVP`, `Head of`).
+- **Tier 5 (Score: 0.80)**: Directors & General Managers (`Director`, `Partner`, `General Manager`).
+- **Tier 6 (Score: 0.65)**: Managers & Team Leads (`Manager`, `Lead`, `Supervisor`).
+- **Tier 7 (Score: 0.50)**: Staff & Associates.
 
-Where:
-- $W_{\text{source}}$ = Base weight of the extraction mechanism ($0.50$ to $0.98$).
-- $B_{\text{context}}$ = Context bonus ($+0.05$ for finding candidate on a dedicated `/contact` or `/about` page; $+0.05$ if inside `<header>` or `<footer>`).
-- $B_{\text{validation}}$ = Validation bonus ($+0.05$ if email domain matches the website domain; $+0.05$ for valid international phone format).
-- $P_{\text{distance}}$ = Penalty ($-0.15$ if found in generic body text without nearby labels).
-
-### Confidence Thresholds
-- **High Confidence ($\ge 0.85$)**: Automatically selected as primary field value.
-- **Medium Confidence ($0.50 - 0.84$)**: Accepted if no higher confidence candidate exists.
-- **Low Confidence ($< 0.50$)**: Rejected. Field remains empty.
+### 4.3 Primary Decision Maker Selection
+- `lead.people[]` is sorted descending by Seniority Score, with secondary tie-breakers for direct email, LinkedIn URL, and confidence.
+- The top-ranked individual is assigned to `lead.decision_maker_name`, `lead.decision_maker_title`, `lead.decision_maker_email`, `lead.decision_maker_linkedin`.
 
 ---
 
-## 5. Conflict Resolution & Merge Policy
+## 5. Lead Quality Scoring Formula
 
-When multiple candidates are found across different pages of the website:
-1. Compare candidates by **Confidence Score**.
-2. If confidence is equal, prefer candidates discovered on high-priority pages (`/contact` > `/about` > `/homepage` > subpages).
-3. If candidates are of identical confidence and page weight, prefer the most complete record (e.g. formatted international phone over local phone).
-4. For arrays (e.g. `People`, `Social Links`), aggregate unique validated items.
+`lead-scorer.js` evaluates every enriched or Maps lead across 4 pillars (0–100 scale):
+
+1. **Physical Identity & Validity (0–25 points)**:
+   - Valid company name: $+10$
+   - Verified address with city & country: $+10$
+   - Category / industry specified: $+5$
+2. **Contactability (0–35 points)**:
+   - Verified primary email: $+15$
+   - Role account bonus (`sales@` or `info@`): $+5$
+   - Additional corporate email: $+3$
+   - Primary phone number: $+10$
+   - Additional phone number: $+2$
+3. **Decision Maker Discovery (0–25 points)**:
+   - Identified decision maker name & title: $+10$
+   - Top executive seniority (Owner/C-level): $+5$
+   - Decision maker direct email: $+5$
+   - Decision maker LinkedIn URL: $+5$
+4. **Digital Footprint (0–15 points)**:
+   - Active, accessible website: $+5$
+   - Verified LinkedIn company page: $+4$
+   - Other verified social profiles (Twitter, Facebook, Instagram, YouTube): $+2$ each (up to $+6$)
+
+### Quality Tier Assignment
+- **HIGH ($\ge 75$)**: Complete, high-priority sales lead with direct decision-maker contact.
+- **MEDIUM ($50 - 74$)**: Valid business with direct phone and primary email.
+- **LOW ($< 50$)**: Incomplete lead lacking actionable contact channels.
+
+---
+
+## 6. Conservative Deduplication Rules
+
+`deduplicator.js` enforces strict, high-precision deduplication to prevent merging distinct businesses:
+
+1. **Place ID Check**:
+   - If both leads have Google Maps `place_id`, they must match exactly.
+   - Different place IDs represent distinct physical locations; **never merge**.
+2. **Domain + Phone Check**:
+   - Identical normalized root domain AND matching phone digits ($\ge 7$ digits).
+   - Conflicting phones on the same domain indicate separate branch offices; **never merge**.
+3. **Domain + Name Similarity**:
+   - Identical root domain AND name token Jaccard similarity $\ge 0.75$ (provided neither record has conflicting phone numbers).
+4. **Negative Rule**:
+   - Never merge businesses based on similar names if domains differ or are missing.
+5. **Data Preservation**:
+   - Merging unions all discovered corporate emails (`additional_emails`), corporate phones (`additional_phones`), executive team members (`people[]`), and social accounts.

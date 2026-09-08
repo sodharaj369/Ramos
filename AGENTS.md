@@ -1,114 +1,117 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
+# RAMOS AI DEVELOPMENT CONTRACT & GOVERNANCE POLICY
 
-# AI DEVELOPMENT CONTRACT & GOVERNANCE POLICY
-
-This document serves as the primary instruction contract for all AI coding agents working on the **Sales Intel** codebase.
+This document serves as the primary instruction contract for all AI coding agents working on the **RAMOS** codebase.
 Every AI agent MUST follow this contract without exception.
 
 ---
 
-## 1. Core Operating Principles
+## 1. Current Product Identity & Release Baseline
 
-1. **Stable/Frozen Components**:
-   - The Chrome Extension Google Maps discovery flow (**v1.0.16**) is **STABLE AND FROZEN**.
-   - Do NOT modify discovery logic, extension API contracts, or messaging bridges unless explicitly commanded with explicit impact analysis.
-2. **Preserve Business Logic**:
-   - Do NOT refactor working architecture merely for convenience or personal style.
-   - Prefer minimum safe, incremental changes.
-3. **Synchronized Lifecycle**:
-   - Code, documentation, configuration, tests, security/RLS, and Git hygiene MUST remain synchronized at all times.
-   - A task is NOT complete until code AND documentation are updated.
+- **Product Name**: RAMOS – Maps Lead Extractor & Website Intelligence
+- **Current Version**: `v1.0.6`
+- **Release Status**: **PILOT READY / RELEASE CANDIDATE (PERMANENTLY FROZEN)**
+- **Baseline Architecture**:
+  - **v1.0.5**: Authoritative, frozen Google Maps extraction engine.
+  - **v1.0.6**: Current integrated release candidate adding modular Website Intelligence, multi-page crawling, people & decision maker discovery, confidence scoring, lead quality scoring, deduplication, and 34-column enriched export.
+- **Runtime Environment**: 100% Client-Side Manifest V3 Chrome Extension.
+- **External Dependencies**: **Zero runtime npm packages**, zero backend servers, zero databases (no Supabase/cloud), zero external scraping APIs, zero proxies.
 
 ---
 
-## 2. Mandatory Workflow: Before Any Code Change
+## 2. Core Operating Principles & Frozen Components
 
-Before writing or modifying any code, the AI MUST:
+1. **Google Maps Engine is FROZEN**:
+   - The Google Maps extraction flow (`extension/content/maps/*`, `extension/discovery.js`) is **STABLE AND FROZEN**.
+   - Do NOT modify Maps selectors, result card extractors, detail panel navigation, or identity matching rules unless explicitly ordered with formal impact analysis.
+2. **Website Intelligence is Modular and Isolated**:
+   - All website intelligence code resides in `extension/content/website/` and `extension/shared/`.
+   - Modifying website logic must never impact or break Google Maps extraction.
+3. **Website Enrichment is Strictly User-Triggered**:
+   - Google Maps extraction NEVER automatically launches website crawling.
+   - Website enrichment is initiated ONLY when the user explicitly clicks `"Enrich Discovered Leads"`.
+4. **Deterministic Extraction & Zero Hallucination**:
+   - No AI, LLM, or generative heuristics in the extraction pipeline.
+   - All extractions must be grounded in actual DOM nodes, structured data (JSON-LD, microdata), or RFC-validated patterns.
+   - If confidence is below threshold, leave the field empty (`null`). Never fabricate or guess values.
+5. **Provenance & Evidence Requirements**:
+   - Every extracted field must preserve internal provenance: source URL, source type, extraction method, and numerical confidence score ($0.00 - 1.00$).
+   - Raw candidate pools must be preserved internally in `_evidence` and `_provenance`.
+6. **Multi-Value Preservation**:
+   - Multiple discovered corporate emails must be preserved in `lead.emails[]` (with primary in `lead.email` and others in `lead.additional_emails`).
+   - Multiple phones must be preserved in `lead.phones[]` (with primary in `lead.phone` and others in `lead.additional_phones`).
+   - People discovered must be preserved in `lead.people[]`.
+   - Discovered social profiles must be preserved in `lead.social`.
+   - Later discoveries must NEVER overwrite stronger earlier candidates without confidence superiority.
+7. **Strict Personal Contact Isolation**:
+   - Employee personal emails or direct cell phones discovered on team cards or profiles must NEVER overwrite company primary email or company phone.
+8. **Authority Precedence**:
+   - Google Maps is authoritative for: `company_name`, `phone`, `address`, `city`, `region`, `country`, `postal_code`, `website`.
+   - Website Intelligence is authoritative for: `email`, `social`, `people`, `decision_maker_*`, `lead_score`, `quality_tier`.
+9. **Security & Anti-Bot Constraints**:
+   - **NO CAPTCHA bypass**: Bot-wall or CAPTCHA challenges must fail gracefully and cleanly without infinite retries.
+   - **NO proxy scraping**: Requests execute directly from the client browser.
+   - **NO authentication bypass**: Never attempt to crawl private login/auth pages.
+   - **Scheme sanitation**: Block non-HTTP protocols (`javascript:`, `data:`, `file:`, `blob:`, `chrome:`).
+   - **Binary file exclusion**: Skip images, PDFs, archives, executables, and media.
+10. **Strict Bounded Crawling & Concurrency**:
+    - Hard maximum page ceiling per website: **20 pages** (options: 1, 5, 10, 20).
+    - Maximum crawl depth: **2 hops** from root.
+    - Concurrency: Sequential single-flight page acquisition.
+11. **Enforced Timeouts (Source Code Authoritative)**:
+    - Google Maps single-candidate detail enrichment timeout: **15,000 ms (15s)** (`background.js:646`).
+    - Website batch enrichment page fetch timeout: **6,000 ms (6s)** (`popup.js:829`).
+    - Standalone interactive website crawl fetch timeout: **10,000 ms (10s)** (`popup.js:1040`).
+12. **Export Compatibility**:
+    - **Maps Standalone Export**: Strictly 24 canonical columns (CSV and XLSX).
+    - **Enriched Export**: Strictly 34 canonical columns (CSV and Sheet 1 "Leads" of XLSX) + 7 columns (Sheet 2 "People" of XLSX).
+    - Never break the 24-column Maps export contract.
+
+---
+
+## 3. Mandatory Workflow: Before Any Code Change
+
+Before writing or modifying any code, the AI agent MUST:
 
 1. **Read `AGENTS.md`** (this document).
-2. **Identify the exact requested change** and target scope.
-3. **Perform a Change-Impact Analysis** (visible checklist):
-   - Affected Code modules
-   - Database schema & migrations
-   - Environment & configuration
-   - Security, authentication, and RLS policies
-   - Provider integrations & secrets
-   - Job engine & background tasks
-   - Chrome Extension & extension messaging contracts
-   - Test suites & test cases
-   - Documentation files (`docs/*.md`, `README.md`)
-   - Deployment files (`Dockerfile`, `start-local.bat`, etc.)
-   - `.env.example` and `.gitignore`
-4. **Read Relevant Documentation FIRST**:
-   - Consult [`docs/DOCUMENTATION_MAP.md`](file:///d:/Sales-Intel/docs/DOCUMENTATION_MAP.md) to locate relevant documentation files.
-   - Read the corresponding `docs/` files BEFORE modifying code.
-5. **Inspect Actual Code**:
-   - Never assume schemas, function signatures, or file paths. Inspect the actual source code.
+2. **Perform Change-Impact Analysis**:
+   ```markdown
+   ### Change Impact Analysis
+   - **Subsystem**: [ ] Google Maps (FROZEN) [ ] Website Intelligence [ ] Shared / Export [ ] Popup UI [ ] Background
+   - **Runtime Behavior Changed**: [ ] Yes [ ] No
+   - **Database / Schema**: [ ] Yes [ ] N/A (Client-Side)
+   - **Chrome Extension Manifest**: [ ] Yes [ ] No
+   - **Tests Affected**: [ ] Maps (14) [ ] Website (143) [ ] QA Matrix (5)
+   - **Export Parity**: [ ] 24-col Maps [ ] 34-col Enriched [ ] 2-sheet XLSX
+   - **Documentation Affected**: [ ] AGENTS.md [ ] ARCHITECTURE [ ] EXPORT [ ] ROADMAP [ ] SECURITY
+   ```
+3. **Inspect Active Code First**: Never assume signatures, timeouts, or schemas. Inspect the actual source code.
 
 ---
 
-## 3. Mandatory Workflow: During Implementation
+## 4. Mandatory Workflow: During Implementation
 
-During code implementation, the AI MUST:
-
-1. **Preserve Existing Contracts**: Keep function signatures, API payloads, and database constraints intact unless explicitly requested.
-2. **Avoid Unnecessary Refactoring**: Focus exclusively on the required task.
-3. **Avoid Architecture Duplication**: Leverage existing abstractions (`src/lib/leads.server.ts`, `src/lib/normalize.ts`, `src/lib/providers/`, etc.).
-4. **Keep Secrets Server-Side**: Never expose API keys or secrets to Vite frontend bundles, React components, or Chrome Extension popups/scripts.
-5. **Preserve RLS & Auth**: Ensure all database queries respect Supabase Row Level Security (RLS) and server-side authorization helpers (`has_role`).
-6. **Consistent Terminology**: Match terminology used in code with [`docs/CURRENT_ARCHITECTURE.md`](file:///d:/Sales-Intel/docs/CURRENT_ARCHITECTURE.md).
+1. **Preserve Frozen Contracts**: Do not touch `extension/content/maps/` unless explicitly commanded with regression proof.
+2. **Keep Zero-Backend Invariant**: Never add external APIs, cloud databases, server microservices, or npm runtime dependencies.
+3. **Keep Client-Side Primitives**: Use native browser `Uint8Array`, `TextEncoder`, and `DOMParser`.
+4. **Follow Safe Error Handling**: All network fetches must handle abort signals and timeouts cleanly without crashing the extension.
 
 ---
 
-## 4. Mandatory Workflow: After Implementation
+## 5. Mandatory Workflow: After Implementation (Completion Checklist)
 
-After modifying code, the AI MUST perform the following 18-step completion checklist:
+After modifying code, the AI agent MUST execute and verify:
 
-1. [ ] **Run relevant tests** (`npm test`).
-2. [ ] **Run typecheck/build** (`npm run build` or `npx tsc`).
-3. [ ] **Review changed files** (`git status`, `git diff`).
-4. [ ] **Identify documentation affected** by the change.
-5. [ ] **Update affected documentation** in `docs/`.
-6. [ ] **Update architecture documentation** ([`CURRENT_ARCHITECTURE.md`](file:///d:/Sales-Intel/docs/CURRENT_ARCHITECTURE.md)) if architecture changed.
-7. [ ] **Update flow documentation** ([`CURRENT_FLOWS.md`](file:///d:/Sales-Intel/docs/CURRENT_FLOWS.md)) if runtime flows changed.
-8. [ ] **Update configuration documentation** ([`CONFIGURATION.md`](file:///d:/Sales-Intel/docs/CONFIGURATION.md)) if configuration changed.
-9. [ ] **Update admin documentation** ([`ADMIN.md`](file:///d:/Sales-Intel/docs/ADMIN.md)) if admin/permissions changed.
-10. [ ] **Update email verification documentation** ([`EMAIL_VERIFICATION.md`](file:///d:/Sales-Intel/docs/EMAIL_VERIFICATION.md)) if email verifier changed.
-11. [ ] **Update `README.md`** if setup or local execution changed.
-12. [ ] **Update `.env.example`** if new environment variables were introduced.
-13. [ ] **Review `.gitignore`** if temporary, generated, or sensitive files were created.
-14. [ ] **Check database migrations** in `supabase/migrations/` if database schema changed.
-15. [ ] **Run automated consistency check** (`npm run check:consistency`).
-16. [ ] **Check for secrets exposure** (no hardcoded keys or internal tokens in code/git).
-17. [ ] **Update `docs/CHANGELOG.md`** for meaningful product/architecture changes.
-18. [ ] **Perform final self-reflection**: *"Does the documentation now describe the actual code?"*
+1. [ ] **Run all automated tests**: `npm test` (all 162+ tests must pass).
+2. [ ] **Run consistency checker**: `npm run check:consistency`.
+3. [ ] **Package extension**: `npm run package:extension`.
+4. [ ] **Verify packaged extension parity**: `node scripts/verify-packaged-extension-parity.js`.
+5. [ ] **Verify zero Maps regressions**: `git diff -- extension/content/maps/` (must be completely clean).
+6. [ ] **Review changed files**: `git status`, `git diff --stat`.
+7. [ ] **Update affected documentation** in `docs/` and root.
+8. [ ] **Update architecture documentation** (`RAMOS_CURRENT_ARCHITECTURE.md`) if architecture changed.
+9. [ ] **Update export specification** (`docs/RAMOS_EXPORT_SPECIFICATION.md`) if export formats changed.
+10. [ ] **Update changelog** (`docs/CHANGELOG.md`) for meaningful product/architecture changes.
+11. [ ] **Check for secret exposure** (zero API keys or credentials in repository).
+12. [ ] **Perform final self-reflection**: *"Does the documentation accurately describe the actual running code?"*
 
 A task is **NOT** considered complete until this entire checklist is satisfied.
-
----
-
-## 5. Change Impact Analysis Template
-
-When proposing or implementing changes, present the impact checklist:
-
-```markdown
-### Change Impact Analysis
-
-- **Code**: [ ] Finder [ ] Extension [ ] Leads [ ] Providers [ ] Jobs [ ] Auth
-- **Database / RLS**: [ ] Yes [ ] No
-- **Configuration**: [ ] Yes [ ] No
-- **Secrets**: [ ] Yes [ ] No
-- **Chrome Extension**: [ ] Yes [ ] STABLE (No Change)
-- **Tests**: [ ] Yes [ ] No
-- **Documentation**: [ ] CURRENT_ARCHITECTURE [ ] CURRENT_FLOWS [ ] CONFIGURATION [ ] ADMIN [ ] EMAIL_VERIFICATION
-- **Deployment / Environment**: [ ] .env.example [ ] Docker [ ] Local scripts
-```

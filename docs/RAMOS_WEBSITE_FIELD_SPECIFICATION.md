@@ -1,182 +1,201 @@
 # RAMOS Website Intelligence Field Specification
 
+**Current Version:** `v1.0.6`  
+**Current Phase:** Phase 9 (Release Candidate / Pilot Ready)  
+**Status:** **CODE FROZEN**  
+**Next Phase:** Phase 10 (Multi-Website & Corporate Relationship Intelligence — PLANNED)
+
+---
+
 ## 1. Field Architecture Overview
 
-Extracted fields are categorized into 4 domain layers plus an internal evidence provenance layer:
-
-1. **Business Identity Fields**
-2. **Contact & Location Fields**
-3. **Social Media Profiles**
-4. **People & Leadership Fields**
-5. **Internal Evidence & Confidence Metadata**
+RAMOS lead data is structured across 6 distinct functional dimensions:
+1. **Business Identity & Core Attributes**
+2. **Contact & Location Details (Multi-Contact Preservation)**
+3. **Executive & Decision Maker Intelligence**
+4. **Lead Scoring & Qualification Tiers**
+5. **Social Media Profiles**
+6. **Internal Evidence & Provenance Metadata**
 
 ---
 
 ## 2. Comprehensive Field Dictionary
 
-### 2.1 Business Identity Fields
+### 2.1 Business Identity & Core Attributes
+
+| Field Name | Type | Description | Source Precedence | Sample Value |
+| :--- | :--- | :--- | :--- | :--- |
+| `company_name` | `string` | Legal or commercial business name | **Maps Authority**; Website fills only if missing | `"Acme Robotics Inc."` |
+| `website` | `string` | Canonical website URL | Maps / Website normalized URL | `"https://acme.com"` |
+| `category` | `string` | Industry or business category | Maps Authority; Website description fills if missing | `"Industrial Automation"` |
+| `business_type` | `string` | Additional business classification or multi-contact summary | Maps / Website | `"Manufacturing"` |
+| `description` | `string` | Summary of company offerings | OpenGraph description, meta description | `"Next-gen industrial automation."` |
+| `booking_url` | `string` | Appointment or demo reservation URL | Maps / Website action link | `"https://calendly.com/acme/demo"` |
+| `ordering_url` | `string` | Online store or ordering URL | Maps / Website action link | `"https://acme.com/shop"` |
+| `menu_url` | `string` | Digital menu or product catalog URL | Maps / Website action link | `"https://acme.com/catalog"` |
+
+---
+
+### 2.2 Contact & Location Fields (Multi-Contact)
 
 | Field Name | Type | Description | Primary Sources | Sample Value |
 | :--- | :--- | :--- | :--- | :--- |
-| `company_name` | `string` | Legal or operating trade name | JSON-LD `name`, OpenGraph `site_name`, `<title>` branding | `"Acme Robotics Inc."` |
-| `website` | `string` | Canonical root domain URL | Canonical tag, user input URL | `"https://acme.com"` |
-| `industry` | `string` | Industry classification | JSON-LD `industry`, Meta tags | `"Industrial Automation"` |
-| `business_type` | `string` | Specific business category | Schema `@type`, meta keywords | `"Manufacturing"` |
-| `description` | `string` | Summary of company offerings | OpenGraph `description`, Meta description | `"Next-generation industrial automation and robotics."` |
-| `logo_url` | `string` | URL to primary logo image | JSON-LD `logo`, OpenGraph `image` | `"https://acme.com/assets/logo.png"` |
-| `founded_year` | `number` | Year company was established | JSON-LD `foundingDate`, regex `"Founded in YYYY"` | `2018` |
+| `email` | `string` | Primary commercial contact email | Website `mailto:`, JSON-LD, `/contact` page | `"sales@acme.com"` |
+| `email_status` | `string` | Email classification (`business_role`, `business_individual`) | Website validator | `"business_role"` |
+| `email_role` | `string` | Commercial role (`sales`, `general`, `support`, etc.) | Website validator | `"sales"` |
+| `emails` | `Array<Object>`| All discovered corporate emails with roles and confidence | Website multi-contact engine | `[ { email, type, emailRole, confidence } ]` |
+| `additional_emails`| `Array<string>`| Secondary corporate emails | Website multi-contact engine | `["info@acme.com", "support@acme.com"]` |
+| `phone` | `string` | Primary business telephone number | **Maps Authority**; Website fills only if missing | `"+1 555-234-5678"` |
+| `phones` | `Array<Object>`| All discovered corporate phone numbers with confidence | Website multi-contact engine | `[ { phone, confidence, sourceType } ]` |
+| `additional_phones`| `Array<string>`| Secondary corporate phone numbers | Website multi-contact engine | `["+1 555-987-6543"]` |
+| `address` | `string` | Full physical address | **Maps Authority**; Website fills only if missing | `"100 Tech Blvd, Austin, TX 78701"` |
+| `city` | `string` | City / locality name | Maps / Website Address Parser | `"Austin"` |
+| `region` | `string` | State, province, or region | Maps / Website Address Parser | `"Texas"` |
+| `country` | `string` | Country name | Maps / Website Address Parser | `"United States"` |
+| `postal_code` | `string` | Postal code / ZIP code | Maps / Website Address Parser | `"78701"` |
 
 ---
 
-### 2.2 Contact & Location Fields
+### 2.3 Executive & Decision Maker Intelligence
 
 | Field Name | Type | Description | Primary Sources | Sample Value |
 | :--- | :--- | :--- | :--- | :--- |
-| `email` | `string` | Primary business contact email | `mailto:` link, JSON-LD `email`, `/contact` page | `"contact@acme.com"` |
-| `email_status` | `string` | Syntax & domain validation status | Domain syntax verifier | `"valid_syntax"` |
-| `phone` | `string` | Standardized phone number | `tel:` link, JSON-LD `telephone`, Contact block | `"+1 (555) 234-5678"` |
-| `phone_raw` | `string` | Unformatted extracted phone text | Direct text match | `"(555) 234-5678 ext. 101"` |
-| `address` | `string` | Full street address string | JSON-LD `PostalAddress`, `<address>` tag | `"100 Tech Blvd, Suite 400, Austin, TX 78701"` |
-| `city` | `string` | City / locality name | Address parser, JSON-LD `addressLocality` | `"Austin"` |
-| `region` | `string` | State, province, or region | Address parser, JSON-LD `addressRegion` | `"Texas"` |
-| `country` | `string` | Country name or ISO code | Address parser, JSON-LD `addressCountry` | `"United States"` |
-| `postal_code` | `string` | Postal code / ZIP code | Address parser, JSON-LD `postalCode` | `"78701"` |
+| `decision_maker_name` | `string` | Name of highest-ranking executive | Website `people-extractor.js` | `"Sarah Connor"` |
+| `decision_maker_title` | `string` | Job title / designation | Website `people-extractor.js` | `"Chief Executive Officer & Founder"` |
+| `decision_maker_email` | `string` | Direct email of decision maker | Direct mailto in leadership card | `"sarah@acme.com"` |
+| `decision_maker_linkedin`| `string` | Direct LinkedIn profile URL of decision maker | LinkedIn anchor in leadership card | `"https://linkedin.com/in/sarah-connor"` |
+| `people_count` | `number` | Total number of extracted personnel | Website `people-extractor.js` | `4` |
+| `people` | `Array<Object>`| Relational roster of team members & executives | Website `people-extractor.js` | See schema below |
 
----
-
-### 2.3 Social Media Profile Fields
-
-| Field Name | Type | Description | Matching Pattern | Sample Value |
-| :--- | :--- | :--- | :--- | :--- |
-| `linkedin` | `string` | Official LinkedIn company page | `linkedin.com/company/{slug}` | `"https://linkedin.com/company/acme-robotics"` |
-| `twitter_x` | `string` | Official Twitter / X profile | `twitter.com/{handle}` or `x.com/{handle}` | `"https://x.com/acmerobotics"` |
-| `facebook` | `string` | Official Facebook page | `facebook.com/{page}` | `"https://facebook.com/acmerobotics"` |
-| `instagram` | `string` | Official Instagram profile | `instagram.com/{handle}` | `"https://instagram.com/acmerobotics"` |
-| `youtube` | `string` | Official YouTube channel | `youtube.com/@{channel}` | `"https://youtube.com/@acmerobotics"` |
-| `github` | `string` | GitHub organization profile | `github.com/{org}` | `"https://github.com/acme-robotics"` |
-
----
-
-### 2.4 Action & Navigation Links
-
-| Field Name | Type | Description | Matching Pattern | Sample Value |
-| :--- | :--- | :--- | :--- | :--- |
-| `booking_url` | `string` | Calendly, ChiliPiper, or booking link | `calendly.com/...`, `/book`, `/schedule` | `"https://calendly.com/acme-sales/demo"` |
-| `ordering_url` | `string` | E-commerce or order link | `/shop`, `/order`, `shopify.com/...` | `"https://acme.com/shop"` |
-| `menu_url` | `string` | Digital menu or catalog | `/menu`, `/catalog`, `/products` | `"https://acme.com/products"` |
-| `contact_url` | `string` | Primary contact page link | `/contact`, `/get-in-touch` | `"https://acme.com/contact"` |
-
----
-
-### 2.5 People & Leadership Fields (`people[]`)
-
-Extracted as an array of structured objects representing key personnel and leadership discovered on `/team`, `/about`, `/people`, or `/leadership` pages:
-
+#### Structure of `lead.people[]`:
 ```typescript
 interface ExtractedPerson {
   name: string;              // e.g. "Sarah Connor"
-  title: string;             // e.g. "Chief Executive Officer & Founder"
-  profile_url: string | null;// e.g. "https://acme.com/team/sarah-connor"
+  title: string | null;      // e.g. "CEO & Founder"
+  profile_url: string | null;// e.g. "https://acme.com/team/sarah"
   linkedin_url: string | null;// e.g. "https://linkedin.com/in/sarah-connor"
   email: string | null;      // e.g. "sarah@acme.com"
-  phone: string | null;      // e.g. "+1 (555) 987-6543"
-  confidence: number;        // e.g. 0.92
+  phone: string | null;      // e.g. "+1 555-987-6543"
+  seniorityScore: number;    // e.g. 1.0 (Tier 1 C-Suite/Ownership)
+  confidence: number;        // e.g. 0.95
 }
 ```
 
 ---
 
-### 2.6 Internal Evidence Model (Not Exported to Plain CSV by Default)
+### 2.4 Lead Scoring & Quality Tiers
 
-Every extracted property tracks an evidence object during extraction for conflict resolution:
+| Field Name | Type | Description | Range | Sample Value |
+| :--- | :--- | :--- | :--- | :--- |
+| `lead_score` | `number` | Transparent composite lead quality score | `0` to `100` | `88` |
+| `quality_tier` | `string` | Actionable sales readiness tier | `"HIGH"` \| `"MEDIUM"` \| `"LOW"` | `"HIGH"` |
 
-```typescript
-interface FieldEvidence<T> {
-  value: T;
-  source: "json-ld" | "microdata" | "mailto-tel" | "semantic-dom" | "labelled-context" | "regex-pattern";
-  confidence: number;      // 0.00 to 1.00
-  foundOnUrl: string;      // e.g. "https://acme.com/contact"
-  rawMatch: string;        // Raw extracted snippet
-}
-```
+---
+
+### 2.5 Social Media Profiles (`lead.social`)
+
+| Field Name | Type | Description | Pattern | Sample Value |
+| :--- | :--- | :--- | :--- | :--- |
+| `linkedin` | `string` | Official LinkedIn company page | `linkedin.com/company/{slug}` | `"https://linkedin.com/company/acme"` |
+| `twitter_x` | `string` | Official Twitter / X profile | `twitter.com/{handle}` or `x.com/{handle}` | `"https://x.com/acmerobotics"` |
+| `facebook` | `string` | Official Facebook company page | `facebook.com/{page}` | `"https://facebook.com/acmerobotics"` |
+| `instagram` | `string` | Official Instagram company profile | `instagram.com/{handle}` | `"https://instagram.com/acmerobotics"` |
+| `youtube` | `string` | Official YouTube channel | `youtube.com/@{channel}` | `"https://youtube.com/@acmerobotics"` |
+| `github` | `string` | Official GitHub organization | `github.com/{org}` | `"https://github.com/acme-robotics"` |
+
+---
+
+### 2.6 Internal Provenance & Evidence Metadata
+
+- `_provenance`: Field-by-field dictionary specifying data origin (`GOOGLE_MAPS` vs `WEBSITE`), source URL, confidence, and lead score breakdown.
+- `_evidence`: Complete array of all candidate evidence objects collected across pages during crawl.
+- `_crawlStats`: Summary of pages scanned, pages budget, early exit reason, and skipped pages count.
 
 ---
 
 ## 3. Export Mapping Reference
 
-### 3.1 Maps Canonical Export (24 columns) — FROZEN
+### 3.1 Google Maps Standalone Export (Strictly 24 Columns) — FROZEN
 
-Maps leads export into the fixed 24-column layout via `buildXlsx()` / `generateCSV()`:
-
-| Export Column | RAMOS Lead Field | Website Extractor Source |
-| :--- | :--- | :--- |
-| **Company** | `company_name` | `company_name` (or primary leader name if solo practitioner) |
-| **Phone** | `phone` | Standardized `phone` |
-| **Website** | `website` | Sanitized `website` |
-| **Email** | `email` | Standardized `email` |
-| **Email Status** | `email_status` | `email_status` |
-| **Address** | `address` | Full parsed `address` |
-| **City** | `city` | `city` |
-| **State / Region** | `region` | `region` |
-| **Country** | `country` | `country` |
-| **Postal Code** | `postal_code` | `postal_code` |
-| **Industry** | `category` | `industry` |
-| **Business Type** | `business_type` | `business_type` |
-| **Booking URL** | `booking_url` | Discovered `booking_url` |
-| **Ordering URL** | `ordering_url`| Discovered `ordering_url` |
-| **Menu URL** | `menu_url` | Discovered `menu_url` |
-| **Source URL** | `source_url` | Visited root URL |
-| **Source Query** | `sourceQuery` | User input URL or domain |
-
-> Social profiles (`lead.social`), People (`lead.people`), and evidence provenance (`lead._provenance`) are attached to the lead object but intentionally **not mapped into the 24 Maps columns** to preserve backward compatibility.
+Exported via `buildXlsx()` and `generateCSV()`:
+1. `Company`
+2. `Phone`
+3. `Website`
+4. `Email`
+5. `Email Status`
+6. `Address`
+7. `City`
+8. `State / Region`
+9. `Country`
+10. `Postal Code`
+11. `Industry`
+12. `Business Type`
+13. `Rating`
+14. `Reviews`
+15. `Opening Status`
+16. `Price Range`
+17. `Booking URL`
+18. `Ordering URL`
+19. `Menu URL`
+20. `Imported At`
+21. `Source URL`
+22. `Place ID`
+23. `Source Query`
+24. `Run ID`
 
 ---
 
-### 3.2 Website Intelligence Export (26 columns + People sheet)
+### 3.2 Enriched Export (Strictly 34 Columns + 2-Sheet XLSX)
 
-Website Intelligence leads export via `buildWebsiteXlsx()` / `generateWebsiteCSV()`:
+Exported via `buildWebsiteXlsx()` and `generateWebsiteCSV()`:
 
-**Sheet 1 — "Leads" (26 columns):**
+#### Sheet 1 — "Leads" (34 Columns):
 
-| # | Column | Lead Field |
-|---|---|---|
-| 1 | Company | `company_name \|\| website` |
-| 2 | Website | `website` |
-| 3 | Primary Email | `email` |
-| 4 | Additional Emails | `emails[1+].email` joined by `"; "` |
-| 5 | Email Status | `email_status` |
-| 6 | Primary Phone | `phone` |
-| 7 | Additional Phones | `phones[1+].phone` joined by `"; "` |
-| 8 | Address | `address` |
-| 9 | City | `city` |
-| 10 | State / Region | `region` |
-| 11 | Country | `country` |
-| 12 | Postal Code | `postal_code` |
-| 13 | Industry | `category` |
-| 14 | Description | `business_type` |
-| 15 | **LinkedIn** | `social.linkedin` |
-| 16 | **Twitter / X** | `social.twitter_x` |
-| 17 | **Facebook** | `social.facebook` |
-| 18 | **Instagram** | `social.instagram` |
-| 19 | **YouTube** | `social.youtube` |
-| 20 | **GitHub** | `social.github` |
-| 21 | Booking URL | `booking_url` |
-| 22 | Ordering URL | `ordering_url` |
-| 23 | Menu URL | `menu_url` |
-| 24 | Source URL | `source_url` |
-| 25 | Imported At | `imported_at` |
-| 26 | Source Query | `sourceQuery` |
+| Col # | Header Name | Data Source |
+| :--- | :--- | :--- |
+| 1 | **Company** | `lead.company_name \|\| lead.website \|\| "—"` |
+| 2 | **Lead Score** | `lead.lead_score` (0–100) |
+| 3 | **Quality Tier** | `lead.quality_tier` (`HIGH`, `MEDIUM`, `LOW`) |
+| 4 | **Website** | `lead.website` |
+| 5 | **Primary Email** | `lead.email` |
+| 6 | **Email Role** | `lead.email_role \|\| lead.emailRole` |
+| 7 | **Additional Emails** | `lead.additional_emails` joined by `"; "` |
+| 8 | **Email Status** | `lead.email_status` |
+| 9 | **Primary Phone** | `lead.phone` (raw text format) |
+| 10 | **Additional Phones** | `lead.additional_phones` joined by `"; "` |
+| 11 | **Decision Maker Name** | `lead.decision_maker_name` |
+| 12 | **Decision Maker Title**| `lead.decision_maker_title` |
+| 13 | **Decision Maker Email**| `lead.decision_maker_email` |
+| 14 | **Decision Maker LinkedIn**| `lead.decision_maker_linkedin` (hyperlink) |
+| 15 | **People Count** | `lead.people_count` |
+| 16 | **Address** | `lead.address` |
+| 17 | **City** | `lead.city` |
+| 18 | **State / Region** | `lead.region \|\| lead.state` |
+| 19 | **Country** | `lead.country` |
+| 20 | **Postal Code** | `lead.postal_code` (raw text format) |
+| 21 | **Industry** | `lead.category` |
+| 22 | **Description** | `lead.description` |
+| 23 | **LinkedIn** | `lead.social.linkedin` (hyperlink) |
+| 24 | **Twitter / X** | `lead.social.twitter_x` (hyperlink) |
+| 25 | **Facebook** | `lead.social.facebook` (hyperlink) |
+| 26 | **Instagram** | `lead.social.instagram` (hyperlink) |
+| 27 | **YouTube** | `lead.social.youtube` (hyperlink) |
+| 28 | **GitHub** | `lead.social.github` (hyperlink) |
+| 29 | **Booking URL** | `lead.booking_url` (hyperlink) |
+| 30 | **Ordering URL** | `lead.ordering_url` (hyperlink) |
+| 31 | **Menu URL** | `lead.menu_url` (hyperlink) |
+| 32 | **Source URL** | `lead.source_url` (hyperlink) |
+| 33 | **Imported At** | `lead.imported_at \|\| now` |
+| 34 | **Source Query** | `lead.sourceQuery` |
 
-**Sheet 2 — "People" (7 columns):**
+#### Sheet 2 — "People" (7 Columns):
 
-| # | Column | Person Field |
-|---|---|---|
-| 1 | Company | `lead.company_name \|\| website` |
-| 2 | Name | `person.name` |
-| 3 | Title | `person.title` |
-| 4 | Email | `person.email` |
-| 5 | Phone | `person.phone` |
-| 6 | LinkedIn | `person.linkedin_url` |
-| 7 | Profile URL | `person.profile_url \|\| linkedin_url` |
-
-
+| Col # | Header Name | Person Attribute |
+| :--- | :--- | :--- |
+| 1 | **Company** | Associated company name or root domain |
+| 2 | **Name** | `person.name` |
+| 3 | **Title** | `person.title` |
+| 4 | **Email** | `person.email` |
+| 5 | **Phone** | `person.phone` (raw text format) |
+| 6 | **LinkedIn** | `person.linkedin_url` (hyperlink) |
+| 7 | **Profile URL** | `person.profile_url` (hyperlink) |

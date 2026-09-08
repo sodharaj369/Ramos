@@ -1,140 +1,130 @@
-# RAMOS — Lead Export & State Contract Specification (v1.0.5)
+# RAMOS — Lead Export & State Contract Specification
 
-## Executive Summary
-This document specifies the authoritative state contract, CSV export format, OpenXML XLSX Excel export architecture, popup state reconstruction rules, and test verification suite for **RAMOS – Maps Lead Extractor (v1.0.5)**.
-
-RAMOS supports **two export pipelines**:
-- **Maps Canonical Export** — 24-column CSV/XLSX, frozen, unchanged.
-- **Website Intelligence Export** — 26-column CSV + 2-sheet XLSX (Leads + People), including social platform URLs.
+**Current Version:** `v1.0.6`  
+**Current Status:** **RELEASE CANDIDATE / PILOT READY**  
+**Frozen Baseline:** `v1.0.5` (Maps-Only Export Contract)
 
 ---
 
-## 1. OOXML Strict Excel Compatibility Fixes (v1.0.5)
+## 1. Executive Summary & Dual-Pipeline Export Architecture
 
-### Root Cause of Excel Recovery Dialog
-When opening generated `.xlsx` files, Microsoft Excel displayed:
-*"We found a problem with some content in 'ramos-...xlsx'. Do you want us to try to recover as much as we can?"*
+RAMOS enforces strict separation between two independent export pipelines:
 
-Systematic OOXML structural analysis revealed 6 specific defects in the generated OpenXML files:
+1. **Google Maps Standalone Export (Strictly 24 Columns) — FROZEN BASELINE (v1.0.5)**:
+   - Preserves 100% backward compatibility for users exporting Maps leads without website enrichment.
+   - Generates clean UTF-8 BOM CSV or ECMA-376 OOXML Strict `.xlsx` files with exactly 24 canonical columns.
 
-1. **Missing Custom `<numFmts>` Declaration**:
-   Style XFs 4 and 5 referenced `numFmtId="49"` (Text format `@`), but `numFmtId="49"` was not declared in `<numFmts>` at the top of `<styleSheet>`.
-2. **Invalid Font Element Sequence**:
-   Child nodes inside `<font>` violated ECMA-376 schema order. In particular, `<u>` lacked `val="single"` attribute (`<u val="single"/>`) and appeared after `<color>`.
-3. **Unpreserved Multiline Whitespace**:
-   Multiline addresses inside `<t>` nodes lacked `xml:space="preserve"`, causing Excel's XML parser to fail whitespace validation on raw `\n` characters.
-4. **Unsanitized XML Control Characters**:
-   ASCII control characters (`\x00-\x08`, `\x0B`, `\x0C`, `\x0E-\x1F`) inside scraped strings were not stripped.
-5. **Zip Header DOS Timestamps**:
-   Zip headers emitted `0x0000` DOS time and `0x0000` DOS date (representing invalid `00/00/1980`), causing Windows Zip decoders and Excel's Zip engine to flag file corruption.
-6. **Worksheet Page Margins**:
-   Missing standard `<pageMargins>` element following `<autoFilter>`.
-
-### Resolution Applied in `v1.0.5`
-- Refactored [`extension/shared/xlsx-builder.js`](file:///d:/Ramos/extension/shared/xlsx-builder.js) to satisfy ECMA-376 OOXML Strict schema definitions.
-- Explicitly declared `<numFmts count="1"><numFmt numFmtId="49" formatCode="@"/></numFmts>`.
-- Enforced strict sequence for `<font>` children: `<b>`, `<i>`, `<u val="single"/>`, `<sz>`, `<color>`, `<name>`.
-- Added `xml:space="preserve"` attribute to all string nodes (`<t xml:space="preserve">`).
-- Sanitized all control characters in `escapeXml()`.
-- Set valid MS-DOS Zip timestamps (`Jan 1, 2024`).
-- Maintained 0 runtime npm dependencies and 100% browser-native `Uint8Array` primitives.
+2. **Enriched Lead Export (Strictly 34 Columns + 2-Sheet XLSX) — RELEASE CANDIDATE (v1.0.6)**:
+   - Generates comprehensive datasets containing all Phase 8/9 intelligence: Lead Quality Score (0–100), Quality Tier (`HIGH`, `MEDIUM`, `LOW`), Primary & Additional Emails with roles, Primary & Additional Phones, Primary Decision Maker (Name, Title, Email, LinkedIn), People Count, full address components, verified social profile URLs, and action links.
+   - **CSV Format**: 34 columns.
+   - **XLSX Format**: 2-sheet OOXML workbook:
+     - **Sheet 1 ("Leads")**: 34 flat CRM-ready company columns.
+     - **Sheet 2 ("People")**: Relational breakdown of all discovered executives and team members (7 columns).
 
 ---
 
-## 2. Authoritative Export State Contract
+## 2. OOXML Strict Excel Compatibility Engineering
 
-1. **State Preservation**: Completed lead records (`currentRun.readyLeads` where `enrichmentStatus === "complete"`) are preserved in background runtime state until a NEW search query is executed.
-2. **Export Eligibility**:
-   ```
-   IF readyCount > 0 THEN:
-     - Download Excel (.xlsx) = ENABLED
-     - Download CSV (.csv)   = ENABLED
-     - Action Button text    = "Run Discovery Again"
-   ```
-3. **Non-Destructive Export**: Downloading CSV or Excel does **NOT** clear `readyLeads` or reset the discovery state.
-4. **Search Isolation**: Executing a new search query creates a fresh `runId` and candidate queue, guaranteeing **0 stale lead leaks** between searches.
+Generated `.xlsx` files are built using 100% browser-native client-side primitives (`Uint8Array`, `TextEncoder`, `DataView`) without Node.js `Buffer` or third-party npm libraries.
 
----
-
-## 3. Test Verification Suite (`tests/maps/gmaps-card-pipeline.test.ts`)
-
-| Test Case | Description | Result |
-| :--- | :--- | :--- |
-| **TEST 1** | 5 ready records → Immediate CSV download succeeds | **PASS** |
-| **TEST 2** | 5 ready records → Immediate Excel (.xlsx) download succeeds | **PASS** |
-| **TEST 3** | Popup reopened after discovery → Ready count restored → CSV download works | **PASS** |
-| **TEST 4** | Popup reopened after discovery → Excel download works | **PASS** |
-| **TEST 5** | Ready = 0 → Export buttons disabled | **PASS** |
-| **TEST 6** | Discovery completed → Export → Run Discovery Again → New Search → Export (No stale records) | **PASS** |
-| **TEST 7** | Pizza search → Export → Gym search → Export (Zero Pizza records in Gym export) | **PASS** |
-| **TEST 8** | Limit = 5 → Exactly 5 leads exported | **PASS** |
-| **TEST 9** | Limit = 10 → Up to 10 leads exported | **PASS** |
-| **TEST 10** | Partial lead fields → Zero column shifting | **PASS** |
-| **INTEGRITY**| CSV vs XLSX record count and field match verification | **PASS** |
-| **BROWSER**  | Browser compatibility regression test (globalThis.Buffer = undefined) | **PASS** |
-| **OOXML**    | ECMA-376 OOXML Strict XML & schema compliance regression test | **PASS** |
+To ensure clean opening in Microsoft Excel without corruption warnings:
+1. **Custom `<numFmts>` Declaration**: Declared custom text format `<numFmt numFmtId="164" formatCode="@"/>` to preserve leading zeros in phone numbers and postal codes.
+2. **Strict Font Element Sequence**: Valid child ordering (`<b>`, `<i>`, `<u val="single"/>`, `<sz>`, `<color>`, `<name>`).
+3. **Preserved Multiline Whitespace**: `xml:space="preserve"` on all string nodes (`<t xml:space="preserve">`) for multiline addresses.
+4. **Sanitized Control Characters**: ASCII control characters (`\x00-\x08`, `\x0B`, `\x0C`, `\x0E-\x1F`) are stripped in `escapeXml()`.
+5. **Valid MS-DOS Timestamps**: Fixed Zip headers with valid DOS date/time (`0x5821`, `0x0000` = Jan 1, 2024).
+6. **Freeze Pane & AutoFilter**: Row 1 freeze pane enabled; AutoFilter enabled across all header columns.
 
 ---
 
-## 4. Versioning History
-- `1.0.0` — Initial Standalone RAMOS Extension Clean Cut.
-- `1.0.1` — RAMOS Visual Branding Redesign & Product Identity.
-- `1.0.2` — Export Reliability Hardening, OpenXML XLSX Excel Exporter, Toast Feedback System & Popup State Reconstruction.
-- `1.0.3` — Critical XLSX Export Regression Fix (100% Browser-Native `Uint8Array` / `TextEncoder` primitives, zero `Buffer` reliance).
-- `1.0.4` — XLSX Readability Polish (Deliberate column widths, wrapped headers, alternating rows).
-- `1.0.5` — Critical XLSX OpenXML Validation Bug Fix (ECMA-376 OOXML Strict Schema Compliance, `numFmts` declaration, `xml:space="preserve"`, valid Zip timestamps).
+## 3. Google Maps Standalone Export Specification (Strictly 24 Columns)
 
----
-
-## 5. Website Intelligence Export Format
-
-### 5.1 CSV — 26 Columns (`generateWebsiteCSV`)
-
-Website Intelligence results are exported using a **dedicated CSV format** with 26 columns, distinct from the frozen Maps 24-column format:
+### Column Layout
 
 ```text
-Col  1: Company             Col 10: Country             Col 19: YouTube
-Col  2: Website             Col 11: Postal Code          Col 20: GitHub
-Col  3: Primary Email       Col 12: Industry             Col 21: Booking URL
-Col  4: Additional Emails   Col 13: Description          Col 22: Ordering URL
-Col  5: Email Status        Col 14: LinkedIn             Col 23: Menu URL
-Col  6: Primary Phone       Col 15: Twitter / X          Col 24: Source URL
-Col  7: Additional Phones   Col 16: Facebook             Col 25: Imported At
-Col  8: Address             Col 17: Instagram            Col 26: Source Query
-Col  9: City / State/Region Col 18: YouTube
+Col  1: Company              Col  9: Country             Col 17: Booking URL
+Col  2: Phone                Col 10: Postal Code          Col 18: Ordering URL
+Col  3: Website              Col 11: Industry             Col 19: Menu URL
+Col  4: Email                Col 12: Business Type        Col 20: Imported At
+Col  5: Email Status         Col 13: Rating               Col 21: Source URL
+Col  6: Address              Col 14: Reviews              Col 22: Place ID
+Col  7: City                 Col 15: Opening Status       Col 23: Source Query
+Col  8: State / Region       Col 16: Price Range          Col 24: Run ID
 ```
 
-- Social columns (LinkedIn, Twitter / X, Facebook, Instagram, YouTube, GitHub) contain the **actual discovered URLs** — never fabricated.
-- Empty social cells are left blank; no placeholder text.
-- Additional Emails and Additional Phones contain secondary discovered contacts separated by `"; "`.
+- Standard single-sheet XLSX via `XlsxBuilder.buildXlsx(leads)`.
+- Standard CSV via `generateCSV(leads)` in `extension/popup.js`.
+- Never modified; remains permanently frozen for v1.0.5 baseline compatibility.
 
-### 5.2 XLSX — 2-Sheet Workbook (`buildWebsiteXlsx`)
+---
 
-Website Intelligence `.xlsx` exports produce a **2-sheet workbook**:
+## 4. Enriched Lead Export Specification (Strictly 34 Columns + 2-Sheet XLSX)
 
-**Sheet 1 — "Leads"** (26 columns, same as CSV above):
-- LinkedIn, Twitter/X, Facebook, Instagram, YouTube, GitHub rendered as clickable hyperlinks.
-- Additional Emails / Additional Phones in dedicated columns.
+### 4.1 Sheet 1 — "Leads" (34 Columns in CSV & XLSX)
 
-**Sheet 2 — "People"** (7 columns):
-```text
-Col 1: Company   Col 2: Name   Col 3: Title   Col 4: Email
-Col 5: Phone     Col 6: LinkedIn               Col 7: Profile URL
-```
-- One row per extracted person (leadership, team members).
-- If no people were detected, one placeholder row `(No people detected)` is written.
+| Col # | Header Name | Type | Description |
+| :--- | :--- | :--- | :--- |
+| 1 | **Company** | Text | Commercial or legal business name |
+| 2 | **Lead Score** | Number | Transparent lead score (0–100) |
+| 3 | **Quality Tier** | Text | Sales qualification tier (`HIGH`, `MEDIUM`, `LOW`) |
+| 4 | **Website** | Hyperlink | Normalized canonical website URL |
+| 5 | **Primary Email** | Text | Primary commercial contact email |
+| 6 | **Email Role** | Text | Commercial role (`sales`, `general`, `support`, etc.) |
+| 7 | **Additional Emails** | Text | Secondary corporate emails joined by `"; "` |
+| 8 | **Email Status** | Text | Verification status (`business_role`, `business_individual`) |
+| 9 | **Primary Phone** | Raw Text | Formatted business phone (leading zeros preserved) |
+| 10 | **Additional Phones** | Text | Secondary corporate phones joined by `"; "` |
+| 11 | **Decision Maker Name** | Text | Full name of top-ranking executive |
+| 12 | **Decision Maker Title**| Text | Executive job title |
+| 13 | **Decision Maker Email**| Text | Direct decision maker email |
+| 14 | **Decision Maker LinkedIn**| Hyperlink | Direct LinkedIn profile URL of decision maker |
+| 15 | **People Count** | Number | Total count of extracted personnel |
+| 16 | **Address** | Text | Full physical street address |
+| 17 | **City** | Text | City / locality name |
+| 18 | **State / Region** | Text | State, province, or region |
+| 19 | **Country** | Text | Country name |
+| 20 | **Postal Code** | Raw Text | Postal / ZIP code (leading zeros preserved) |
+| 21 | **Industry** | Text | Primary business category |
+| 22 | **Description** | Text | Business overview / offerings summary |
+| 23 | **LinkedIn** | Hyperlink | Official LinkedIn company page |
+| 24 | **Twitter / X** | Hyperlink | Official Twitter / X profile |
+| 25 | **Facebook** | Hyperlink | Official Facebook company page |
+| 26 | **Instagram** | Hyperlink | Official Instagram company profile |
+| 27 | **YouTube** | Hyperlink | Official YouTube channel |
+| 28 | **GitHub** | Hyperlink | Official GitHub organization |
+| 29 | **Booking URL** | Hyperlink | Appointment or reservation URL |
+| 30 | **Ordering URL** | Hyperlink | Online ordering or store URL |
+| 31 | **Menu URL** | Hyperlink | Digital menu or product catalog URL |
+| 32 | **Source URL** | Hyperlink | Originating Google Maps or website URL |
+| 33 | **Imported At** | Text | ISO 8601 discovery timestamp |
+| 34 | **Source Query** | Text | Search term or target domain |
 
-### 5.3 Implementation
+### 4.2 Sheet 2 — "People" (7 Columns in XLSX)
 
-| Function | File | Purpose |
-|---|---|---|
-| `generateWebsiteCSV(leads)` | `extension/popup.js` | Website 26-column CSV |
-| `websiteLeadToCsvRow(l)` | `extension/popup.js` | Row mapper with social |
-| `buildWebsiteXlsx(leads)` | `extension/shared/xlsx-builder.js` | 2-sheet XLSX builder |
-| `buildXlsx(leads)` | `extension/shared/xlsx-builder.js` | Maps 24-col XLSX (unchanged) |
-| `generateCSV(leads)` | `extension/popup.js` | Maps 24-col CSV (unchanged) |
+Available in the 2-sheet OOXML workbook generated via `XlsxBuilder.buildWebsiteXlsx(leads)`:
 
-### 5.4 Download Pipeline
+| Col # | Header Name | Type | Description |
+| :--- | :--- | :--- | :--- |
+| 1 | **Company** | Text | Associated company name or domain |
+| 2 | **Name** | Text | Full name of extracted person |
+| 3 | **Title** | Text | Job title / designation |
+| 4 | **Email** | Text | Direct corporate email |
+| 5 | **Phone** | Raw Text | Direct phone number |
+| 6 | **LinkedIn** | Hyperlink | Direct LinkedIn profile URL (`linkedin.com/in/...`) |
+| 7 | **Profile URL** | Hyperlink | Internal team bio / profile URL |
 
-Both CSV and XLSX use the unified **`SI_DOWNLOAD_FILE` → background service worker → `chrome.downloads.download`** pipeline (Data URI approach) to bypass Manifest V3 process isolation between popup and background contexts. Blob URLs are NOT used (they fail across process boundaries in MV3).
+---
 
+## 5. Export Function Implementation Map
+
+| Export Type | Output Format | Generator Function | Location | Column Count |
+| :--- | :--- | :--- | :--- | :--- |
+| **Maps Standalone** | CSV | `generateCSV(leads)` | `extension/popup.js` | 24 columns |
+| **Maps Standalone** | XLSX | `buildXlsx(leads)` | `extension/shared/xlsx-builder.js` | 24 columns (1 sheet) |
+| **Enriched Leads** | CSV | `generateWebsiteCSV(leads)` | `extension/popup.js` | 34 columns |
+| **Enriched Leads** | XLSX | `buildWebsiteXlsx(leads)` | `extension/shared/xlsx-builder.js` | 34 cols (Sheet 1) + 7 cols (Sheet 2) |
+
+### 5.1 Download Pipeline
+Both CSV and XLSX export flows route through the unified messaging bridge:
+`popup.js → chrome.runtime.sendMessage({ type: "SI_DOWNLOAD_FILE", url: dataUrl, filename }) → background.js → chrome.downloads.download()`.
+This architecture guarantees reliable downloads and circumvents Manifest V3 blob URL cross-process restrictions.

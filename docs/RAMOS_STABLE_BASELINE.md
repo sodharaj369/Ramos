@@ -1,24 +1,42 @@
-# RAMOS — Stable Baseline Specification (v1.0.5)
+# RAMOS — Stable Baseline Specification
 
-## Executive Summary
-This document defines the authoritative, frozen engineering baseline for **RAMOS – Maps Lead Extractor (v1.0.5)**.
-
-RAMOS is a standalone, local Manifest V3 Chrome Extension designed for Google Maps business lead extraction, sequential detail-panel enrichment, canonical normalization, and local CSV/XLSX export.
+**Frozen Maps Baseline:** `v1.0.5`  
+**Current Integrated Release:** `v1.0.6` (Pilot Ready / Release Candidate)  
+**Distribution Artifact:** `dist/ramos-maps-connector-v1.0.6.zip` (111.1 KB, 36 runtime files)  
+**Engineering State:** **PERMANENTLY FROZEN**
 
 ---
 
-## 1. Product Identity & Target Architecture
+## 1. Executive Summary & Dual Baseline Hierarchy
 
-- **Product Name**: RAMOS – Maps Lead Extractor
+This document defines the engineering baselines of the RAMOS Chrome Extension:
+
+1. **v1.0.5 Baseline (Frozen Google Maps Engine)**:
+   - Authoritative, permanent freeze of the core Google Maps lead extraction engine.
+   - Preserves DOM discovery scripts, candidate queue state machine, card extractors, detail panel navigators, and the canonical 24-column Maps export format.
+   - Maps extraction logic is **100% stable and frozen**.
+
+2. **v1.0.6 Baseline (Integrated Pilot & Release Candidate)**:
+   - Integrates modular Website Intelligence, targeted multi-page crawling, people and decision maker discovery, multi-contact aggregation, confidence and conflict resolution, lead quality scoring, deduplication, and the 34-column enriched export pipeline.
+   - Passed all 162 automated test suites, real Chrome browser validation runs, and physical spreadsheet verification audits.
+   - Formally designated as **Pilot Ready / Release Candidate**.
+
+---
+
+## 2. Product Identity & Target Architecture
+
+- **Product Name**: RAMOS – Maps Lead Extractor & Website Intelligence
 - **Short Name**: RAMOS
-- **Version**: `1.0.5`
+- **Current Version**: `1.0.6`
 - **Target Distribution**: Local unpacked installation via `chrome://extensions` → Developer Mode → Load unpacked.
 - **Runtime Environment**: Manifest V3 Chrome Extension (Google Maps Content Script + Background Service Worker + Popup Window).
-- **External Dependencies**: **0 runtime npm packages**, 0 backend databases (Supabase removed), 0 external API servers, 0 auth services, 0 Node.js runtime globals (`Buffer`, `process`, `fs`, `path`).
+- **External Dependencies**: **0 runtime npm packages**, 0 backend databases, 0 external API servers, 0 auth services, 0 Node.js runtime globals (`Buffer`, `process`, `fs`, `path`).
 
 ---
 
-## 2. Component Structure & Communication
+## 3. Frozen Google Maps Baseline (v1.0.5)
+
+The Google Maps extraction pipeline established in `v1.0.5` remains active and completely untouched:
 
 ```
 Google Maps Page (google.com/maps)
@@ -32,10 +50,7 @@ Popup UI Controller (extension/popup.js, popup.html)
 Local CSV Export / OpenXML XLSX Export (extension/shared/xlsx-builder.js)
 ```
 
----
-
-## 3. Canonical Schema (24 Export Fields)
-
+### Frozen Canonical Schema (24 Export Fields)
 1. `Company` — Extracted business title
 2. `Phone` — Parsed phone number (preserved as raw text to prevent leading-zero truncation)
 3. `Website` — Primary website URL (formatted as clickable hyperlink in XLSX)
@@ -58,50 +73,45 @@ Local CSV Export / OpenXML XLSX Export (extension/shared/xlsx-builder.js)
 20. `Imported At` — ISO 8601 discovery timestamp
 21. `Source URL` — Google Maps URL (clickable hyperlink)
 22. `Place ID` — Google Maps Place ID identifier
-23. `Source Query` — Search term executed (e.g. `hyundai near me`)
+23. `Source Query` — Search term executed (e.g. `commercial roofing`)
 24. `Run ID` — Discovery session identifier
 
 ---
 
-## 4. Export Capabilities & Formatting
+## 4. Integrated Release Candidate Baseline (v1.0.6)
 
-- **Filename Structure**: `ramos-${sanitize(query)}-${YYYY}-${MM}-${DD}.${csv|xlsx}`
-- **CSV Format**: Clean UTF-8 with Byte Order Mark (`\uFEFF`), CRLF line endings (`\r\n`), strict RFC 4180 escaping.
-- **XLSX Format**: ECMA-376 OOXML Strict compliant binary zip archive generated 100% client-side via native `Uint8Array`, `TextEncoder`, and `DataView` primitives.
-  - **Header Row**: RAMOS Deep Violet fill (`#7C3AED`), white bold text, centered/top-aligned, 28pt height, wrapped text.
-  - **Grid Styling**: Alternating white (`#FFFFFF`) and light neutral (`#F8FAFC`) row fills with slate borders (`#E2E8F0`).
-  - **Top Row Freeze**: `<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>`.
-  - **Header AutoFilter**: AutoFilter enabled across all columns (`A1:X{N}`).
-  - **Excel Compatibility**: Verified 100% clean open in Microsoft Excel without recovery prompts.
+RAMOS `v1.0.6` integrates the full Website Intelligence subsystem on top of the frozen Maps baseline without modifying Maps extraction contracts:
 
----
-
-## 5. Manifest & Permissions Audit
-
-[`extension/manifest.json`](file:///d:/Ramos/extension/manifest.json) contains minimal required permissions:
-- `permissions`:
-  - `storage` — Persisting popup options and user limits.
-  - `tabs` — Querying active Google Maps tab status.
-  - `scripting` — Injecting content scripts into Google Maps tabs.
-  - `downloads` — Saving CSV and XLSX export files via `chrome.downloads.download()`.
-- `host_permissions`:
-  - `https://www.google.com/maps*`
-  - `https://*.google.com/maps*`
-  - `https://maps.google.com/*`
+### Integrated Subsystems
+- **Single-Page Website Extraction (Phase 1)**: Structured data (JSON-LD, microdata), semantic DOM, mailto/tel, OpenGraph.
+- **Smart Targeted Crawling (Phase 2)**: Priority queue scoring `/contact`, `/about`, `/team`, `/locations` with dynamic field-awareness and bounded budgets (max 20 pages, max depth 2).
+- **People & Leadership Extraction (Phase 3)**: Team card parser, Person schema, clean name/title separation, and seniority ranking (`c_level`, `vp`, `director`, `founder`, `manager`, `staff`).
+- **Evidence & Confidence Scoring (Phase 4)**: 7-tier source reliability weighting, page context modifiers, cross-page corroboration bonuses, and deterministic conflict resolution.
+- **Dual-Mode UI (Phase 5)**: Seamless mode switching in extension popup with live progress bars, people view, and error toasts.
+- **Maps → Website Lead Enrichment (Phase 6)**: Non-destructive merger with Maps authority for physical fields and field-level `_provenance` dictionary.
+- **Export Parity & Social Support (Phase 7)**: Preserved 24-col Maps export; added social columns (LinkedIn, Twitter/X, Facebook, Instagram, YouTube, GitHub) and 2-sheet XLSX.
+- **Lead Quality & Deduplication (Phase 8)**: Transparent lead scoring (0–100), quality tiers (`HIGH`, `MEDIUM`, `LOW`), conservative deduplication (`place_id`, domain+phone, domain+name similarity), and multi-contact preservation (`emails[]`, `phones[]`).
+- **Production Hardening & RC Validation (Phase 9)**: 162 passing automated tests, zero secret exposures, 100% packaged file parity (36 runtime files), and end-to-end spreadsheet verification.
 
 ---
 
-## 6. Validation & Consistency Results
+## 5. Enforced Timeout Standards (Source Code Authoritative)
 
-| Verification Suite | Execution Result | Status |
-| :--- | :--- | :--- |
-| **Unit & Regression Suite** (`npm test`) | **14 / 14 Passed** (632ms) | **PASS** |
-| **Consistency Checker** (`npm run check:consistency`) | Checked docs, secret hygiene, versioning | **PASS** |
-| **Distribution Packager** (`npm run package:extension`) | Generated `dist/ramos-maps-connector-v1.0.5.zip` (49.6 KB) | **PASS** |
-| **Parity Verifier** (`node scripts/verify-packaged-extension-parity.js`) | Source vs ZIP artifact 100% verified (v1.0.5) | **PASS** |
+| Operation | Enforced Timeout | Location | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Maps Candidate Extraction** | **15,000 ms (15s)** | `extension/background.js:646` | Guards against stuck detail panel rendering or Maps network lag. |
+| **Batch Enrichment Page Fetch** | **6,000 ms (6s)** | `extension/popup.js:829` | Bounded per-website timeout to keep batch enrichment moving on broken/slow sites. |
+| **Interactive Website Crawl Fetch** | **10,000 ms (10s)** | `extension/popup.js:1040` | Interactive timeout for single-site deep crawls in popup UI. |
 
 ---
 
-## 7. Baseline Declaration
+## 6. Verification Results Summary
 
-RAMOS **v1.0.5** is officially **FROZEN** as the stable internal baseline. Future feature development (e.g. VibeProspecting, Apollo integration, external enrichment APIs) must branch cleanly from this baseline.
+| Verification Suite | Test Count | Result | Status |
+| :--- | :--- | :--- | :--- |
+| **Google Maps Regression Suite** | 14 tests | 14 passed | **PASS** |
+| **Website Intelligence Unit Suite** | 143 tests | 143 passed | **PASS** |
+| **Phase 9 RC QA Matrix** | 5 tests | 5 passed | **PASS** |
+| **Total Automated Test Suite** (`npm test`) | **162 tests** | **162 passed / 0 failed** | **PASS** |
+| **Project Consistency Checker** (`npm run check:consistency`) | Docs, secrets, hygiene | 0 errors | **PASS** |
+| **Packaged Extension Parity** (`node scripts/verify-packaged-extension-parity.js`) | 36 runtime files | 100% parity match | **PASS** |

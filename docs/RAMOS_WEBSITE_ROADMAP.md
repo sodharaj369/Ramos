@@ -1,129 +1,115 @@
 # RAMOS Website Intelligence Implementation Roadmap
 
+**Current Baseline Version:** `v1.0.6`  
+**Current Status:** **PILOT READY / RELEASE CANDIDATE (PHASES 0–9 COMPLETE)**  
+**Next Active Phase:** Phase 10 (Multi-Website & Corporate Relationship Intelligence — PLANNED)
+
+---
+
 ## 1. Overview & Phased Execution Plan
 
-The Website Extraction capability will be implemented in 8 structured, regression-safe phases. Each phase requires rigorous unit testing, consistency verification, packaging validation, and documentation updates.
+The RAMOS Website Intelligence capability has been delivered across 10 structured, regression-safe phases. Phases 0 through 9 are **100% COMPLETE** and formally verified. Phase 10 is currently **PLANNED**.
 
 ```mermaid
 gantt
-    title RAMOS Website Intelligence Roadmap
+    title RAMOS Website Intelligence Execution Roadmap
     dateFormat  X
     axisFormat %s
 
-    section Phase 0 - 0.5
-    Phase 0: Read-Only Investigation & Safety Baseline      :done, p0, 0, 1
-    Phase 0.5: Architecture & Design Documentation Review   :done, p05, 1, 2
+    section Foundation & Single-Page
+    Phase 0 / 0.5: Investigation, Safety & Design Specification :done, p0, 0, 2
+    Phase 1: Single-Page Extraction Engine                     :done, p1, 2, 4
 
-    section Core Extraction
-    Phase 1: Single-Page Extraction Engine                  :active, p1, 2, 4
-    Phase 2: Smart Link Discovery & Crawl Queue             :p2, 4, 6
-    Phase 3: People & Leadership Extraction                 :p3, 6, 8
+    section Crawler & Intelligence
+    Phase 2: Smart Link Discovery & Crawl Queue                :done, p2, 4, 6
+    Phase 3: People & Leadership Extraction                    :done, p3, 6, 8
+    Phase 4: Evidence & Confidence Scoring Engine              :done, p4, 8, 10
 
-    section Intelligence & UI
-    Phase 4: Evidence & Confidence Scoring Engine           :p4, 8, 10
-    Phase 5: RAMOS Popup & Tabbed UI Integration            :p5, 10, 12
+    section UI & Enrichment
+    Phase 5: RAMOS Dual-Mode Popup UI Integration              :done, p5, 10, 12
+    Phase 6: Google Maps -> Website Lead Enrichment            :done, p6, 12, 14
+    Phase 7: Export Parity, Social Fields & 2-Sheet XLSX       :done, p7, 14, 16
 
-    section Enrichment & Hardening
-    Phase 6: Google Maps -> Website Lead Enrichment         :p6, 12, 14
-    Phase 7: Export Parity, Synthetic Fixtures & Hardening  :p7, 14, 16
+    section Hardening & Qualification
+    Phase 8: Lead Scoring, Deduplication & Multi-Contact       :done, p8, 16, 18
+    Phase 9: Production Hardening & Release Candidate (v1.0.6) :done, p9, 18, 20
+
+    section Planned Future Phases
+    Phase 10: Multi-Website & Corporate Relationship Intelligence:active, p10, 20, 22
+    Phase 11: Website Health & Sales Readiness Signals         :p11, 22, 24
+    Phase 12: Commercial Opportunity Signals                   :p12, 24, 26
+    Phase 13: Lead Prioritization & Scoring Engine v2          :p13, 26, 28
 ```
 
 ---
 
-## 2. Phase Breakdown & Deliverables
+## 2. Phase Breakdown & Verification Status
 
-### Phase 0: Read-Only Investigation & Safety Baseline (COMPLETED)
-- Inspect complete repository, frozen components, tests, and manifests.
-- Verify frozen baseline integrity for Google Maps discovery flow (`14/14 tests passing`).
-- Confirm zero backend / zero npm runtime dependencies.
+### Phase 0 / 0.5: Investigation, Safety & Design Review — **COMPLETE**
+- Inspected complete repository, verified frozen baseline for Google Maps discovery flow (`14/14 tests passing`).
+- Established architectural guardrails: 0 backend dependencies, 0 runtime npm packages.
+- Delivered initial architecture, extraction rules, field specifications, security guidelines, and roadmap documentation.
 
-### Phase 0.5: Design Review & Specification (COMPLETED)
-- Deliver architecture, extraction rules, field specifications, security guidelines, and roadmap documentation.
-- Establish canonical field mappings and confidence scoring matrices.
+### Phase 1: Single-Page Extraction Engine — **COMPLETE**
+- Extracted business identity, contacts, semantic addresses, and social links from a single page without crawling.
+- Modules built: `page-acquisition.js`, `page-analyzer.js`, `structured-data.js`, `field-extractors.js`, `normalizers.js`, `validators.js`.
 
-### Phase 1: Single-Page Extraction Engine
-- **Target**: Extract comprehensive business, contact, and social data from a single URL without crawling.
-- **Components Built**:
-  - `extension/content/website/page-analyzer.js`
-  - `extension/content/website/structured-data.js`
-  - `extension/content/website/field-extractors.js`
-  - `extension/content/website/normalizers.js`
-  - `extension/content/website/validators.js`
-  - `extension/content/website/website-adapter.js`
-- **Validation**: Node unit tests on synthetic HTML fixtures (JSON-LD, semantic DOM, mailto/tel, OpenGraph).
+### Phase 2: Smart Link Discovery & Crawl Queue — **COMPLETE**
+- Implemented targeted crawling prioritizing `/contact`, `/about`, `/team`, `/locations` with dynamic field awareness.
+- Modules built: `crawl-policy.js` (same-domain bounds, scheme checks, binary exclusion), `page-priority.js`, `link-discovery.js`, `crawl-queue.js` (page budget ceilings 1, 5, 10, 20; max depth 2; early exit).
 
-### Phase 2: Smart Link Discovery & Crawl Queue (COMPLETED)
-- **Target**: Targeted business-intelligence crawling prioritizing high-yield pages (`/contact`, `/about`, `/team`, `/locations`).
-- **Components Built**:
-  - `extension/content/website/crawl-policy.js` (Same-domain boundary, scheme sanitation, file type & login path exclusions)
-  - `extension/content/website/page-priority.js` (Path & anchor text scoring matrix: `/contact` +100, `/about` +80, `/team` +85, nav context bonus)
-  - `extension/content/website/link-discovery.js` (Same-domain link discoverer with anchor text and container extraction)
-  - `extension/content/website/crawl-queue.js` (Bounded priority queue, deduplication, depth <= 2, page limits, early stopping)
-  - `extension/content/website/website-adapter.js` (Integrated `crawlWebsite()` pipeline with cross-page evidence aggregation)
-- **Validation**: Node unit tests on link discovery and crawl queue dynamics; real Chrome browser targeted crawler smoke test with early termination.
+### Phase 3: People & Leadership Extraction — **COMPLETE**
+- Extracted structured executive profiles without hallucination or title guessing.
+- Modules built: `people-extractor.js` (DOM team cards, Person schema, clean name/title separation, seniority scoring).
+- Strict isolation: employee personal emails/phones are forbidden from overwriting company primary contacts.
 
-### Phase 3: People & Leadership Extraction (COMPLETED)
-- **Target**: Extract structured executive and team member profiles without hallucination or title guessing.
-- **Components Built**:
-  - `extension/content/website/people-extractor.js` (JSON-LD Person, Microdata Person, DOM team card parser, name/title separation, multi-page deduplication)
-  - `extension/content/website/website-adapter.js` (Integrated `people[]` array cleanly isolated from company contact fields)
-- **Capabilities**: Structured `people[]` extraction (`name`, `title`, `profile_url`, `linkedin_url`, `email`, `phone`, `evidence`). Zero title guessing when role is unstated. Strictly prevents company-wide generic emails (`sales@`, `info@`) from leaking to individual employees.
-- **Validation**: 7 unit tests; live Chrome browser smoke test verifying name/title separation, LinkedIn URLs, direct emails, and strict company email isolation.
+### Phase 4: Evidence & Confidence Scoring Engine — **COMPLETE**
+- Evaluated multi-source candidates across 7 reliability tiers ($0.50 - 0.98$) with cross-page corroboration bonuses.
+- Modules built: `confidence.js` (deterministic conflict resolver, corroboration scoring, `_fieldRankings` attachment).
 
-### Phase 4: Evidence & Confidence Scoring Engine (COMPLETED)
-- **Target**: Multi-source candidate evaluation, scoring, corroboration, and deterministic conflict resolution.
-- **Components Built**:
-  - `extension/content/website/confidence.js` (Tier 1-7 source quality baseline, page context modifier, cross-page corroboration bonus, deterministic conflict resolver)
-  - `extension/content/website/website-adapter.js` (Standardized evidence model, candidate ranking, `_fieldRankings` attachment)
-- **Capabilities**: Computes deterministic confidence scores ($0.00 - 1.00$); retains all candidate evidence across pages; prefers contact page and high-tier structured sources; applies corroboration bonuses for values confirmed across independent pages; strictly rejects below-threshold placeholders without guessing.
-- **Validation**: 8 unit tests; live Chrome browser smoke test verifying email and phone conflict resolution, corroboration bonuses, and deterministic rankings.
+### Phase 5: RAMOS Dual-Mode Popup UI Integration — **COMPLETE**
+- Delivered seamless dual-mode UI (`[ Google Maps ] [ Website Intelligence ]`) inside `popup.html`, `popup.js`, `popup.css`.
+- Real-time crawler metrics, people roster display, error toasts, and instant cancellation via `AbortController`.
 
-### Phase 5: RAMOS UI & Popup Integration (COMPLETED)
-- **Target**: Seamless dual-mode interface in the RAMOS extension popup.
-- **Components Modified**:
-  - `extension/popup.html` (Top-level mode switcher: `[ Google Maps ] [ Website Intelligence ]`, URL input, scope filters, page limit, live progress, results summary, people table, evidence inspection, export buttons)
-  - `extension/popup.js` (Dual-mode controller, abortable crawler orchestration, safe DOM rendering, XLSX/CSV export, error toast handling)
-  - `extension/popup.css` (Polished tab navigation conforming to RAMOS Brand Guidelines, scope checkboxes, people list, evidence details)
-- **Capabilities**: Full client-side Website Intelligence execution inside the popup; auto-detection of active tab website; real-time crawler metrics; user stop action with partial results retention; direct OOXML XLSX and CSV export; 100% frozen preservation of Google Maps mode.
-- **Validation**: 5 unit tests in `tests/website/website-popup-ui.test.ts`; live Chrome browser smoke test verifying mode switching, input validation, extraction, and clean return to Maps.
+### Phase 6: Google Maps → Website Lead Enrichment — **COMPLETE**
+- Delivered non-destructive batch enrichment for discovered Maps leads.
+- Modules built: `enricher.js` (strictly preserves Maps authority for physical fields, attaches field-level `_provenance` dictionary).
 
-### Phase 6: Google Maps → Website Enrichment (COMPLETED)
-- **Target**: Additive, non-destructive enrichment of Google Maps leads with extracted website data.
-- **Components Built & Modified**:
-  - `extension/content/website/enricher.js` (Deterministic merger enforcing Maps authority, non-overwriting rules, employee email isolation, and field-level `_provenance` dictionary)
-  - `extension/popup.html` (Added Website Enrichment section in discovery summary with lead count, `[ Enrich Websites ]`, live progress bar, and metrics)
-  - `extension/popup.js` (Batch enrichment orchestration, `AbortController` cancellation, state isolation on new search, safe DOM rendering)
-  - `extension/popup.css` (Added `.enrich-section` and `.btn-enrich` styles)
-- **Capabilities**: When a Maps lead has a `website` field, trigger website intelligence to populate missing emails, social links, and personnel data without overwriting verified Maps fields; zero stale data survives across searches; leads without websites are skipped cleanly; 100% frozen preservation of Google Maps extraction and existing exports.
-- **Validation**: 21 unit tests in `tests/website/website-enrichment.test.ts`; live Chrome browser smoke test verifying discovery → enrichment → export → new search state isolation.
+### Phase 7: Export Parity, Social Fields & 2-Sheet XLSX — **COMPLETE**
+- Preserved frozen 24-column Maps export contract.
+- Added verified social profile columns (LinkedIn, Twitter/X, Facebook, Instagram, YouTube, GitHub).
+- Implemented 2-sheet OOXML XLSX export: Sheet 1 ("Leads") and Sheet 2 ("People").
 
-### Phase 7: Export Parity, Synthetic Fixtures & Hardening (COMPLETED)
-- **Target**: Full regression testing, export verification, packaging parity, and final production release audit.
-- **Deliverables Completed**:
-  - Synthetic export parity test suite (`tests/website/website-export-parity.test.ts`) validating strict 24-column positioning, sparse lead resilience, leading zero preservation, and special character sanitization.
-  - End-to-end audit verifying Google Maps discovery, targeted crawling, people extraction, confidence scoring, Website enrichment, state isolation, and OOXML XLSX / RFC-4180 CSV parity.
-  - Extension packaging verified: 34 clean runtime files (90.2 KB) with 100% source-to-distribution parity.
-  - Final audit document authored: `docs/RAMOS_FINAL_RELEASE_AUDIT.md`.
+### Phase 8: Lead Scoring, Multi-Contact & Deduplication — **COMPLETE**
+- **Lead Quality Scoring**: `lead-scorer.js` computes 0–100 score and assigns quality tiers (`HIGH`, `MEDIUM`, `LOW`).
+- **Multi-Contact Preservation**: `lead.emails[]` (with commercial role tags: sales, general, support) and `lead.phones[]`.
+- **Decision Maker Selection**: Highest-ranking executive promoted to top decision maker fields.
+- **Conservative Deduplication**: `deduplicator.js` matches duplicate leads via `place_id`, domain+phone, or domain+high name similarity ($\ge 0.75$) without merging distinct branch locations.
+- **Enriched Export**: Upgraded enriched export layout to 34 columns.
 
-### Phase 8: Real-World Lead Quality, Reliability & Production Hardening (COMPLETED)
-- **Target**: Transform RAMOS from raw data extraction into high-precision sales intelligence with lead scoring, decision maker ranking, resilient bounded crawling, deduplication, and rich 34-column CRM exports.
-- **Deliverables Completed**:
-  - **Phase 8A — Lead Quality + Decision Maker**: Deterministic 0–100 lead scoring (`extension/content/website/lead-scorer.js`), quality tiering (HIGH/MEDIUM/LOW), executive seniority ranking, and flat CRM fields (`decision_maker_name`, `decision_maker_title`, `decision_maker_email`, `decision_maker_linkedin`, `people_count`).
-  - **Phase 8B — Email + Social Intelligence**: Functional role email classification (`sales`, `general`, `support`, `marketing`, `careers`, `direct`), deterministic primary email selection, corporate social profile normalization, and strict employee contact isolation.
-  - **Phase 8C — Reliability & Resilience**: 6s timeout ceiling per page fetch, bounded worker pool (`CONCURRENCY = 3`), non-bypass Cloudflare XOR public token email decoding, graceful failure tolerance (403/404/429/network errors never stop batch), and immediate cancellation response.
-  - **Phase 8D — Deduplication Engine**: Conservative duplicate detection (`extension/shared/deduplicator.js`) by `place_id`, `domain + phone`, and `domain + high name similarity` without merging distinct branches or businesses with different domains/phones.
-  - **Phase 8E — Export & UI Improvements**: 34-column enriched XLSX & CSV export parity, user-visible enrichment metrics summary (`10 leads → 8 enriched → 1 skipped → 1 failed | 6 emails | 5 decision makers | Avg Lead Score: 78`), and real Chrome E2E verification across 7 suites.
-- **Validation**: 157 automated tests passed (0 failures); complete real-Chrome Puppeteer E2E QA suite verified actual binary XLSX and CSV downloads on disk. Documented in `docs/RAMOS_WEBSITE_PHASE_8_REPORT.md`.
+### Phase 9: Production Hardening & Release Candidate (v1.0.6) — **COMPLETE / RELEASE CANDIDATE**
+- Hardened all error paths: 6s batch enrichment timeout, 10s interactive crawler timeout, 15s Maps candidate timeout.
+- Full qualification: **162 passing automated tests**, 0 failures, 100% packaged file parity (36 runtime files), clean Excel validation.
+- Formally tagged and packaged as **RAMOS v1.0.6 Pilot Ready / Release Candidate**.
 
 ---
 
-## 3. Mandatory Quality & Regression Gates
+## 3. Active & Future Roadmap
 
-At the conclusion of each phase:
-```bash
-npm test
-npm run check:consistency
-npm run package:extension
-node scripts/verify-packaged-extension-parity.js
-```
-All Google Maps extraction tests must remain 100% passing at all times.
+### Phase 10: Multi-Website & Corporate Relationship Intelligence — **PLANNED / NEXT**
+- **Objective**: Given a primary business website, discover and verify up to a few high-confidence official related domains (e.g. careers portals, parent corporate groups, regional domains, official brand subsidiaries).
+- **Core Constraints**:
+  - Bounded discovery: maximum 2 verified related websites (max 3 total websites per lead).
+  - Deterministic verification: never merge domains based on similar names alone; require multi-signal evidence (shared corporate email domain, shared physical address, shared phone, official company LinkedIn).
+  - Unverified candidates remain `UNKNOWN` and are never crawled automatically.
+  - Zero AI/LLM, zero external scraping proxies, zero new dependencies.
+  - Preserve all existing Maps and Website Intelligence contracts.
+
+### Phase 11: Website Health & Sales Readiness Signals — **FUTURE DIRECTION**
+- Assess commercial website health indicators (SSL validity, mobile readiness, CMS/platform signals, active contact responsiveness) to gauge sales receptivity.
+
+### Phase 12: Commercial Opportunity Signals — **FUTURE DIRECTION**
+- Identify actionable business expansion triggers (hiring surges, new location openings, service launches) from official website evidence.
+
+### Phase 13: Lead Prioritization & Scoring Engine v2 — **FUTURE DIRECTION**
+- Advanced composite ranking combining Maps local prominence, digital footprint, contact depth, and commercial signals into actionable sales tiering.
