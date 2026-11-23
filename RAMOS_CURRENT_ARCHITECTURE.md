@@ -93,14 +93,15 @@ RAMOS Chrome Extension (v1.0.6)
 ├── extension/
 │   ├── background.js              # Background Service Worker: single run authority, queue dispatcher, CSV generator
 │   ├── discovery.js               # Maps Content Script worker: candidate discovery, bounded scroll, click dispatcher
-│   ├── popup.html                 # Dual-mode UI: Google Maps & Website Intelligence tabs, metrics, people table, export buttons
-│   ├── popup.js                   # Popup UI controller: state machine, live progress, batch enricher, export routing
-│   ├── popup.css                  # RAMOS Design System: Deep Violet theme (#7C3AED), dark/light styling, badges, tables
+│   ├── popup.html                 # Three-mode UI: Google Maps, Website Intelligence, and Merge & Dedup tabs
+│   ├── popup.js                   # Popup UI controller: state machine, live progress, batch enricher, file merger, export routing
+│   ├── popup.css                  # RAMOS Design System: Deep Violet theme (#7C3AED), dark/light styling, badges, tables, dropzone
 │   ├── assets/                    # Official icon assets (16x16, 32x32, 48x48, 128x128 PNGs)
 │   ├── shared/                    # Shared Infrastructure Modules
 │   │   ├── constants.js           # Error codes, extraction modes, result limits
 │   │   ├── schema.js              # Canonical 24-attribute lead schema (createCanonicalLead)
 │   │   ├── deduplicator.js        # High-precision conservative deduplication & lead merger
+│   │   ├── file-merger.js         # Zero-dependency CSV/XLSX parser, normalizer, and multi-file merger
 │   │   └── xlsx-builder.js        # 100% browser-native ECMA-376 OOXML Strict XLSX generator (buildXlsx & buildWebsiteXlsx)
 │   └── content/
 │       ├── maps/                  # [FROZEN] Google Maps Extraction Subsystem
@@ -130,10 +131,10 @@ RAMOS Chrome Extension (v1.0.6)
 ├── dist/                          # Packaged release archives (ramos-maps-connector-v1.0.6.zip)
 ├── docs/                          # Comprehensive specification & architecture documentation
 ├── scripts/                       # Packaging, consistency verification, and parity checking utilities
-└── tests/                         # Node.js test suites (162 passing tests)
+└── tests/                         # Node.js test suites (166 passing tests)
     ├── maps/                      # Google Maps card & detail pipeline regression tests (14 tests)
     ├── website/                   # Website Intelligence unit, crawler, enrichment, and export tests (143 tests)
-    └── qa/                        # End-to-end release candidate validation tests (5 tests)
+    └── qa/                        # End-to-end release candidate validation tests (9 tests)
 ```
 
 ---

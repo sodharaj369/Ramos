@@ -12,8 +12,10 @@
     // Mode Tabs
     tabMapsBtn: document.getElementById("tabMapsBtn"),
     tabWebsiteBtn: document.getElementById("tabWebsiteBtn"),
+    tabMergeBtn: document.getElementById("tabMergeBtn"),
     mapsPanel: document.getElementById("mapsPanel"),
     websitePanel: document.getElementById("websitePanel"),
+    mergePanel: document.getElementById("mergePanel"),
 
     // Toast
     exportToast: document.getElementById("exportToast"),
@@ -92,6 +94,29 @@
     webEvidenceContent: document.getElementById("webEvidenceContent"),
     webDownloadXlsxBtn: document.getElementById("webDownloadXlsxBtn"),
     webDownloadCsvBtn: document.getElementById("webDownloadCsvBtn"),
+
+    // Merge & Dedup Elements
+    mergeDropzone: document.getElementById("mergeDropzone"),
+    mergeFileInput: document.getElementById("mergeFileInput"),
+    mergeFileListContainer: document.getElementById("mergeFileListContainer"),
+    mergeFileCountLabel: document.getElementById("mergeFileCountLabel"),
+    mergeFileChips: document.getElementById("mergeFileChips"),
+    mergeClearAllBtn: document.getElementById("mergeClearAllBtn"),
+    mergeRunBtn: document.getElementById("mergeRunBtn"),
+    mergeProgressContainer: document.getElementById("mergeProgressContainer"),
+    mergeProgressBar: document.getElementById("mergeProgressBar"),
+    mergeProgressText: document.getElementById("mergeProgressText"),
+    mergeResultSummary: document.getElementById("mergeResultSummary"),
+    mergeSummaryTitle: document.getElementById("mergeSummaryTitle"),
+    mergeRatioBadge: document.getElementById("mergeRatioBadge"),
+    mergeStatFiles: document.getElementById("mergeStatFiles"),
+    mergeStatTotal: document.getElementById("mergeStatTotal"),
+    mergeStatDuplicates: document.getElementById("mergeStatDuplicates"),
+    mergeStatMaster: document.getElementById("mergeStatMaster"),
+    mergeBreakdownBox: document.getElementById("mergeBreakdownBox"),
+    mergeBreakdownList: document.getElementById("mergeBreakdownList"),
+    mergeDownloadXlsxBtn: document.getElementById("mergeDownloadXlsxBtn"),
+    mergeDownloadCsvBtn: document.getElementById("mergeDownloadCsvBtn"),
   };
 
   const manifestVersion =
@@ -162,16 +187,15 @@
   // ─── Mode Switching ──────────────────────────────────────────────────────────
   function setTabMode(mode) {
     currentActiveTabMode = mode;
-    if (mode === "maps") {
-      el.tabMapsBtn?.classList.add("active");
-      el.tabWebsiteBtn?.classList.remove("active");
-      el.mapsPanel?.classList.remove("hidden");
-      el.websitePanel?.classList.add("hidden");
-    } else {
-      el.tabMapsBtn?.classList.remove("active");
-      el.tabWebsiteBtn?.classList.add("active");
-      el.mapsPanel?.classList.add("hidden");
-      el.websitePanel?.classList.remove("hidden");
+    el.tabMapsBtn?.classList.toggle("active", mode === "maps");
+    el.tabWebsiteBtn?.classList.toggle("active", mode === "website");
+    el.tabMergeBtn?.classList.toggle("active", mode === "merge");
+
+    el.mapsPanel?.classList.toggle("hidden", mode !== "maps");
+    el.websitePanel?.classList.toggle("hidden", mode !== "website");
+    el.mergePanel?.classList.toggle("hidden", mode !== "merge");
+
+    if (mode === "website") {
       checkActiveTabForWebsite();
     }
   }
@@ -1378,11 +1402,268 @@
     }
   }
 
+  // ─── MASTER FILE MERGER & DEDUPLICATOR CONTROLLER ────────────────────────────
+  let stagedMergeFiles = [];
+  let currentMergedResult = null;
+  let isMerging = false;
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+  }
+
+  function renderStagedFiles() {
+    if (!el.mergeFileChips || !el.mergeFileCountLabel || !el.mergeFileListContainer || !el.mergeRunBtn) return;
+    const count = stagedMergeFiles.length;
+    el.mergeFileCountLabel.textContent = `Staged Files (${count})`;
+
+    if (count === 0) {
+      el.mergeFileListContainer.classList.add("hidden");
+      el.mergeRunBtn.disabled = true;
+      el.mergeFileChips.innerHTML = "";
+      return;
+    }
+
+    el.mergeFileListContainer.classList.remove("hidden");
+    el.mergeRunBtn.disabled = count < 1;
+    el.mergeFileChips.innerHTML = "";
+
+    stagedMergeFiles.forEach((file, idx) => {
+      const chip = document.createElement("div");
+      chip.className = "file-chip";
+
+      const isXlsx = /\.xlsx$/i.test(file.name);
+      const extBadge = isXlsx ? "xlsx" : "csv";
+
+      const left = document.createElement("div");
+      left.className = "file-chip-left";
+
+      const badge = document.createElement("span");
+      badge.className = `file-chip-badge ${extBadge}`;
+      badge.textContent = extBadge;
+      left.appendChild(badge);
+
+      const name = document.createElement("span");
+      name.className = "file-chip-name";
+      name.textContent = file.name;
+      name.title = file.name;
+      left.appendChild(name);
+
+      const right = document.createElement("div");
+      right.className = "file-chip-right";
+
+      const size = document.createElement("span");
+      size.className = "file-chip-size";
+      size.textContent = formatFileSize(file.size);
+      right.appendChild(size);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "file-chip-remove";
+      removeBtn.type = "button";
+      removeBtn.innerHTML = "&times;";
+      removeBtn.title = "Remove file";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        stagedMergeFiles.splice(idx, 1);
+        renderStagedFiles();
+      });
+      right.appendChild(removeBtn);
+
+      chip.appendChild(left);
+      chip.appendChild(right);
+      el.mergeFileChips.appendChild(chip);
+    });
+  }
+
+  function addMergeFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    let added = 0;
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      if (!/\.(csv|xlsx)$/i.test(f.name)) {
+        showToast(`Skipped ${f.name}: only .csv and .xlsx supported`, "error");
+        continue;
+      }
+      const exists = stagedMergeFiles.some(
+        (existing) => existing.name === f.name && existing.size === f.size
+      );
+      if (!exists) {
+        stagedMergeFiles.push(f);
+        added++;
+      }
+    }
+    if (added > 0) {
+      renderStagedFiles();
+    }
+  }
+
+  function readFileAsData(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      const isXlsx = /\.xlsx$/i.test(file.name);
+      reader.onload = () => {
+        if (isXlsx) {
+          resolve({ name: file.name, data: new Uint8Array(reader.result) });
+        } else {
+          resolve({ name: file.name, data: reader.result });
+        }
+      };
+      reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+      if (isXlsx) {
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.readAsText(file);
+      }
+    });
+  }
+
+  async function runMerge() {
+    if (isMerging || stagedMergeFiles.length === 0) return;
+    const FileMerger = window.RamosFileMerger || globalThis.RamosFileMerger;
+    if (!FileMerger) {
+      showToast("File merger engine not loaded", "error");
+      return;
+    }
+
+    isMerging = true;
+    if (el.mergeRunBtn) el.mergeRunBtn.disabled = true;
+    if (el.mergeProgressContainer) el.mergeProgressContainer.classList.remove("hidden");
+    if (el.mergeResultSummary) el.mergeResultSummary.classList.add("hidden");
+    if (el.mergeProgressBar) el.mergeProgressBar.style.width = "20%";
+    if (el.mergeProgressText) {
+      el.mergeProgressText.textContent = `Reading ${stagedMergeFiles.length} file${stagedMergeFiles.length === 1 ? "" : "s"}...`;
+    }
+
+    try {
+      const readFiles = [];
+      for (let i = 0; i < stagedMergeFiles.length; i++) {
+        if (el.mergeProgressBar) {
+          el.mergeProgressBar.style.width = `${20 + Math.round((i / stagedMergeFiles.length) * 45)}%`;
+        }
+        if (el.mergeProgressText) {
+          el.mergeProgressText.textContent = `Reading ${stagedMergeFiles[i].name}...`;
+        }
+        const fileData = await readFileAsData(stagedMergeFiles[i]);
+        readFiles.push(fileData);
+      }
+
+      if (el.mergeProgressBar) el.mergeProgressBar.style.width = "75%";
+      if (el.mergeProgressText) {
+        el.mergeProgressText.textContent = "Normalizing columns and deduplicating leads...";
+      }
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const result = await FileMerger.mergeLeadFiles(readFiles);
+      currentMergedResult = result;
+
+      if (el.mergeProgressBar) el.mergeProgressBar.style.width = "100%";
+      if (el.mergeProgressContainer) el.mergeProgressContainer.classList.add("hidden");
+      if (el.mergeRunBtn) el.mergeRunBtn.disabled = false;
+
+      const breakdownList = (result && (result.fileBreakdown || result.breakdown)) || [];
+      const totalRaw = result?.rawCount ?? result?.totalRawLeads ?? 0;
+      const totalDups = result?.duplicatesRemoved ?? 0;
+      const totalMaster = Array.isArray(result?.masterLeads) ? result.masterLeads.length : 0;
+
+      // Populate summary stats
+      if (el.mergeStatFiles) el.mergeStatFiles.textContent = String(breakdownList.length);
+      if (el.mergeStatTotal) el.mergeStatTotal.textContent = String(totalRaw);
+      if (el.mergeStatDuplicates) el.mergeStatDuplicates.textContent = String(totalDups);
+      if (el.mergeStatMaster) el.mergeStatMaster.textContent = String(totalMaster);
+
+      // Populate breakdown list
+      if (el.mergeBreakdownList) {
+        el.mergeBreakdownList.innerHTML = "";
+        breakdownList.forEach((fb) => {
+          const row = document.createElement("div");
+          row.className = "breakdown-item";
+
+          const fn = document.createElement("span");
+          fn.className = "breakdown-filename";
+          const displayName = fb.fileName || fb.name || "File";
+          fn.textContent = displayName;
+          fn.title = displayName;
+
+          const counts = document.createElement("span");
+          counts.className = "breakdown-counts";
+          const count = fb.leadCount ?? fb.rowCount ?? 0;
+          counts.textContent = `${count} leads`;
+
+          row.appendChild(fn);
+          row.appendChild(counts);
+          el.mergeBreakdownList.appendChild(row);
+        });
+      }
+
+      if (el.mergeResultSummary) el.mergeResultSummary.classList.remove("hidden");
+      showToast(
+        `Merged ${totalRaw} leads into ${totalMaster} unique master leads!`,
+        "success"
+      );
+    } catch (err) {
+      console.error("[RAMOS][MERGE_ERROR]", err);
+      if (el.mergeProgressContainer) el.mergeProgressContainer.classList.add("hidden");
+      if (el.mergeRunBtn) el.mergeRunBtn.disabled = false;
+      showToast(`Merge failed: ${err.message}`, "error");
+    } finally {
+      isMerging = false;
+    }
+  }
+
+  function exportMasterMerged(format = "xlsx") {
+    if (!currentMergedResult || !currentMergedResult.masterLeads || !currentMergedResult.masterLeads.length) {
+      showToast("No master merged leads available to export.", "error");
+      return;
+    }
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `ramos-master-leads-${dateStr}.${format}`;
+
+    if (format === "xlsx") {
+      const XlsxBuilder = window.RamosXlsxBuilder || globalThis.RamosXlsxBuilder;
+      if (!XlsxBuilder || typeof XlsxBuilder.buildWebsiteXlsx !== "function") {
+        showToast("Export failed: XLSX builder unavailable.", "error");
+        return;
+      }
+      try {
+        const xlsxBytes = XlsxBuilder.buildWebsiteXlsx(currentMergedResult.masterLeads);
+        const dataUrl = uint8ToDataUrl(
+          xlsxBytes,
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        downloadDataUrl(dataUrl, filename, (res) => {
+          if (res && res.ok) {
+            showToast(`Master leads exported to XLSX (${currentMergedResult.masterLeads.length} rows).`, "success");
+          } else {
+            showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+          }
+        });
+      } catch (err) {
+        showToast(`Export failed: ${err.message}`, "error");
+      }
+    } else {
+      try {
+        const csvString = generateWebsiteCSV(currentMergedResult.masterLeads);
+        triggerCsvDownload(csvString, filename, (res) => {
+          if (res && res.ok) {
+            showToast(`Master leads exported to CSV (${currentMergedResult.masterLeads.length} rows).`, "success");
+          } else {
+            showToast(`Export failed: ${res?.error || "Download cancelled"}`, "error");
+          }
+        });
+      } catch (err) {
+        showToast(`Export failed: ${err.message}`, "error");
+      }
+    }
+  }
+
   // ─── Setup Action Listeners ──────────────────────────────────────────────────
   function setupActions() {
     // Mode Switch
     el.tabMapsBtn?.addEventListener("click", () => setTabMode("maps"));
     el.tabWebsiteBtn?.addEventListener("click", () => setTabMode("website"));
+    el.tabMergeBtn?.addEventListener("click", () => setTabMode("merge"));
 
     // Maps Actions
     el.openMapsBtn?.addEventListener("click", () => openGoogleMapsTab());
@@ -1399,6 +1680,34 @@
     el.webStopBtn?.addEventListener("click", () => stopWebsiteExtraction());
     el.webDownloadXlsxBtn?.addEventListener("click", () => exportWebsiteLead("xlsx"));
     el.webDownloadCsvBtn?.addEventListener("click", () => exportWebsiteLead("csv"));
+
+    // Merge & Dedup Actions
+    el.mergeDropzone?.addEventListener("click", () => el.mergeFileInput?.click());
+    el.mergeFileInput?.addEventListener("change", (e) => {
+      if (e.target.files) addMergeFiles(e.target.files);
+      e.target.value = "";
+    });
+    el.mergeDropzone?.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      el.mergeDropzone.classList.add("dragover");
+    });
+    el.mergeDropzone?.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      el.mergeDropzone.classList.remove("dragover");
+    });
+    el.mergeDropzone?.addEventListener("drop", (e) => {
+      e.preventDefault();
+      el.mergeDropzone.classList.remove("dragover");
+      if (e.dataTransfer?.files) addMergeFiles(e.dataTransfer.files);
+    });
+    el.mergeClearAllBtn?.addEventListener("click", () => {
+      stagedMergeFiles = [];
+      if (el.mergeFileInput) el.mergeFileInput.value = "";
+      renderStagedFiles();
+    });
+    el.mergeRunBtn?.addEventListener("click", () => runMerge());
+    el.mergeDownloadXlsxBtn?.addEventListener("click", () => exportMasterMerged("xlsx"));
+    el.mergeDownloadCsvBtn?.addEventListener("click", () => exportMasterMerged("csv"));
   }
 
   function initPopup() {

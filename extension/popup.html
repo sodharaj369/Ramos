@@ -1,17 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>RAMOS – Maps &amp; Website Intelligence</title>
   <link rel="icon" type="image/png" href="assets/ramos-icon-32.png">
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <!-- Header -->
     <div class="header">
       <div class="brand">
-        <span class="logo-icon"><img src="assets/ramos-icon-32.png" width="20" height="20" alt="RAMOS" style="vertical-align: middle; border-radius: 4px;"></span>
+        <span class="logo-icon"><img src="assets/ramos-icon-32.png" width="20" height="20" alt="RAMOS"
+            style="vertical-align: middle; border-radius: 4px;"></span>
         <span class="brand-name">RAMOS</span>
         <span class="brand-sub">LEAD INTELLIGENCE</span>
         <span id="extVersion" class="version-tag">v1.0.6</span>
@@ -22,7 +25,8 @@
     <!-- Mode Tabs -->
     <div class="mode-tabs">
       <button id="tabMapsBtn" class="tab-btn active" data-tab="maps">Google Maps</button>
-      <button id="tabWebsiteBtn" class="tab-btn" data-tab="website">Website Intelligence</button>
+      <button id="tabWebsiteBtn" class="tab-btn" data-tab="website">Website</button>
+      <button id="tabMergeBtn" class="tab-btn" data-tab="merge">Merge &amp; Dedup</button>
     </div>
 
     <!-- Feedback Toast / Banner -->
@@ -94,18 +98,26 @@
         </div>
 
         <div id="discoveryStatsGrid" class="stats-grid">
-          <div class="stat-item"><span class="stat-label">Discovered</span><span id="statDiscovered" class="stat-val">0</span></div>
-          <div class="stat-item"><span class="stat-label">Qualified</span><span id="statQualified" class="stat-val">0</span></div>
-          <div class="stat-item"><span class="stat-label">Enriched</span><span id="statEnriched" class="stat-val">0</span></div>
-          <div class="stat-item"><span class="stat-label">Failed</span><span id="statFailed" class="stat-val">0</span></div>
-          <div class="stat-item"><span class="stat-label">Duplicates</span><span id="statDuplicates" class="stat-val">0</span></div>
-          <div class="stat-item highlight"><span class="stat-label">Ready</span><span id="statReady" class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Discovered</span><span id="statDiscovered"
+              class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Qualified</span><span id="statQualified"
+              class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Enriched</span><span id="statEnriched"
+              class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Failed</span><span id="statFailed" class="stat-val">0</span>
+          </div>
+          <div class="stat-item"><span class="stat-label">Duplicates</span><span id="statDuplicates"
+              class="stat-val">0</span></div>
+          <div class="stat-item highlight"><span class="stat-label">Ready</span><span id="statReady"
+              class="stat-val">0</span></div>
         </div>
 
         <!-- Website Enrichment Subsystem (Phase 6) -->
         <div id="enrichSection" class="enrich-section mt-2">
-          <div class="enrich-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span id="enrichStatusInfo" class="enrich-status-info" style="font-size: 11px; color: #94a3b8;">0 leads with websites</span>
+          <div class="enrich-header"
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span id="enrichStatusInfo" class="enrich-status-info" style="font-size: 11px; color: #94a3b8;">0 leads with
+              websites</span>
             <button id="enrichWebsitesBtn" class="btn btn-enrich" type="button">Enrich Websites</button>
             <button id="stopEnrichBtn" class="btn btn-danger hidden" type="button">Stop Enrichment</button>
           </div>
@@ -113,7 +125,8 @@
             <div class="progress-bar-bg">
               <div id="enrichProgressBar" class="progress-bar-fill"></div>
             </div>
-            <p id="enrichProgressText" class="progress-text" style="font-size: 10px; margin-top: 4px;">Enriching websites...</p>
+            <p id="enrichProgressText" class="progress-text" style="font-size: 10px; margin-top: 4px;">Enriching
+              websites...</p>
             <div id="enrichMetricsRow" class="web-metrics-row">
               <span>✓ Enriched: <strong id="enrichMetricCount">0</strong></span>
               <span>↷ Skipped: <strong id="enrichMetricSkipped">0</strong></span>
@@ -147,8 +160,10 @@
         <div class="form-group">
           <label>Extraction Scope</label>
           <div class="scope-tags">
-            <label class="scope-checkbox"><input type="checkbox" id="scopeCompany" checked /> <span>Company</span></label>
-            <label class="scope-checkbox"><input type="checkbox" id="scopeContact" checked /> <span>Contact</span></label>
+            <label class="scope-checkbox"><input type="checkbox" id="scopeCompany" checked />
+              <span>Company</span></label>
+            <label class="scope-checkbox"><input type="checkbox" id="scopeContact" checked />
+              <span>Contact</span></label>
             <label class="scope-checkbox"><input type="checkbox" id="scopeSocial" checked /> <span>Social</span></label>
             <label class="scope-checkbox"><input type="checkbox" id="scopePeople" checked /> <span>People</span></label>
           </div>
@@ -237,6 +252,79 @@
       </div>
     </div>
 
+    <!-- ==================== MERGE & DEDUPLICATE PANEL ==================== -->
+    <div id="mergePanel" class="panel-view hidden">
+      <div class="card mode-card">
+        <div class="card-title">MASTER FILE MERGER &amp; DEDUPLICATOR</div>
+        <p style="font-size: 11px; color: #94a3b8; line-height: 1.4;">
+          Upload 2 or more CSV or Excel (.xlsx) files to combine and eliminate duplicate businesses.
+        </p>
+
+        <!-- Dropzone -->
+        <div id="mergeDropzone" class="merge-dropzone">
+          <input type="file" id="mergeFileInput" multiple accept=".csv, .xlsx" style="display: none;" />
+          <div class="dropzone-content">
+            <div class="dropzone-icon">📁</div>
+            <div class="dropzone-text"><strong>Click to browse</strong> or drag files here</div>
+            <div class="dropzone-sub">Supports multiple .csv and .xlsx files</div>
+          </div>
+        </div>
+
+        <!-- File list container -->
+        <div id="mergeFileListContainer" class="merge-file-list hidden">
+          <div class="merge-file-list-header">
+            <span id="mergeFileCountLabel">Staged Files (0)</span>
+            <button id="mergeClearAllBtn" class="btn-link" type="button">Clear all</button>
+          </div>
+          <div id="mergeFileChips" class="merge-file-chips"></div>
+        </div>
+
+        <!-- Action Button -->
+        <div class="actions-primary mt-2">
+          <button id="mergeRunBtn" class="btn btn-primary" disabled>Merge &amp; Deduplicate</button>
+        </div>
+
+        <!-- Merge Progress Section -->
+        <div id="mergeProgressContainer" class="progress-section hidden">
+          <div class="progress-bar-bg">
+            <div id="mergeProgressBar" class="progress-bar-fill"></div>
+          </div>
+          <p id="mergeProgressText" class="progress-text">Processing and normalizing files...</p>
+        </div>
+      </div>
+
+      <!-- Summary Card (Results & Downloads) -->
+      <div id="mergeResultSummary" class="card summary-card hidden">
+        <div class="summary-header">
+          <span id="mergeSummaryTitle" class="summary-title">Merge Complete</span>
+          <span id="mergeRatioBadge" class="confidence-badge">Master Clean</span>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-item"><span class="stat-label">Files</span><span id="mergeStatFiles"
+              class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Total Leads</span><span id="mergeStatTotal"
+              class="stat-val">0</span></div>
+          <div class="stat-item"><span class="stat-label">Duplicates</span><span id="mergeStatDuplicates"
+              class="stat-val">0</span></div>
+          <div class="stat-item highlight"><span class="stat-label">Master Leads</span><span id="mergeStatMaster"
+              class="stat-val">0</span></div>
+        </div>
+
+        <!-- Breakdown by file -->
+        <div id="mergeBreakdownBox" class="merge-breakdown-box">
+          <div class="breakdown-header">File Breakdown</div>
+          <div id="mergeBreakdownList" class="breakdown-list"></div>
+        </div>
+
+        <!-- Download Master Files -->
+        <div class="actions-stacked mt-2">
+          <button id="mergeDownloadXlsxBtn" class="btn btn-primary btn-excel">Download Master Excel (.xlsx)</button>
+          <button id="mergeDownloadCsvBtn" class="btn btn-secondary">Download Master CSV (.csv)</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 4. Footer -->
     <div class="footer-links" style="justify-content: center; font-size: 11px; color: #94a3b8; padding-top: 4px;">
       <span>RAMOS – Lead Intelligence</span>
@@ -260,8 +348,10 @@
   <script src="content/website/confidence.js"></script>
   <script src="content/website/lead-scorer.js"></script>
   <script src="shared/deduplicator.js"></script>
+  <script src="shared/file-merger.js"></script>
   <script src="content/website/enricher.js"></script>
   <script src="content/website/website-adapter.js"></script>
   <script src="popup.js"></script>
 </body>
+
 </html>
