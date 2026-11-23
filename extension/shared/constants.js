@@ -28,7 +28,7 @@
     UNKNOWN_ERROR: "UNKNOWN_ERROR",
   };
 
-  const HARD_MAX_RESULTS = 50;
+  const HARD_MAX_RESULTS = 500;
 
   return {
     EXTRACTION_MODES,

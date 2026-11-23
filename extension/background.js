@@ -42,6 +42,10 @@ let currentRun = {
   failedLeads: [],
   status: "idle", // 'idle' | 'running' | 'completed' | 'cancelled' | 'failed'
   startedAt: Date.now(),
+  autoDownload: true,
+  autoDownloadTriggered: false,
+  autoDownloadedFilename: null,
+  totalDiscovered: 0,
   // Single-flight candidate tracking
   activeIndex: -1,
   activeAttemptId: null,
@@ -80,9 +84,9 @@ function normalizeQuery(q) {
   return q.toLowerCase().replace(/\+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function startNewRun(query, limit) {
+function startNewRun(query, limit, autoDownload = true) {
   const newRunId = generateRunId();
-  const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+  const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 500);
   const canonicalQuery = normalizeQuery(query) || query || null;
 
   // Clear any in-flight timeout from the previous run before replacing currentRun
@@ -97,6 +101,10 @@ function startNewRun(query, limit) {
     query: canonicalQuery,
     sourceQuery: canonicalQuery,
     requestedLimit: requestedLimit,
+    autoDownload: autoDownload !== false,
+    autoDownloadTriggered: false,
+    autoDownloadedFilename: null,
+    totalDiscovered: 0,
     candidates: [],
     results: [],
     enrichedLeads: [],
@@ -131,6 +139,10 @@ function checkAndResetSession(newQuery, newUrl) {
   const queryChanged = Boolean(normNewQuery && normOldQuery && normNewQuery !== normOldQuery);
 
   if (queryChanged) {
+    if (currentRun.status === "running") {
+      console.log(`[SI][SESSION] RESET_IGNORED: run is actively running for "${currentRun.sourceQuery}"`);
+      return;
+    }
     console.log(`[SI][SESSION] RESET queryChanged=true previousQuery="${mapsState.searchQuery}" newQuery="${newQuery}"`);
     mapsState.searchQuery = newQuery;
     mapsState.url = newUrl || mapsState.url;
@@ -417,24 +429,49 @@ function executeExportDownload(customSendResponse, format = "csv", providedLeads
     }
   } else {
     const csv = isEnriched ? createEnrichedCsv(leads) : createCsv(leads);
-    dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+    try {
+      const bytes = new TextEncoder().encode(csv);
+      let binary = "";
+      const len = bytes.length;
+      const CHUNK_SIZE = 8192;
+      for (let i = 0; i < len; i += CHUNK_SIZE) {
+        const sub = bytes.subarray(i, Math.min(i + CHUNK_SIZE, len));
+        binary += String.fromCharCode.apply(null, sub);
+      }
+      const base64 = typeof btoa === "function" ? btoa(binary) : "";
+      dataUrl = `data:text/csv;charset=utf-8;base64,${base64}`;
+    } catch (e) {
+      dataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+    }
   }
 
   console.log(`[SI][EXPORT_FLOW][DOWNLOAD_REQUEST] filename="${filename}" format=${exportFormat}`);
 
-  try {
-    chrome.downloads.download(
-      {
-        url: dataUrl,
-        filename: filename,
-        saveAs: false,
-      },
-      (downloadId) => {
+  function performTabDownloadFallback(url, fn, errMsg) {
+    if (discoveryState.tabId) {
+      console.log(`[SI][EXPORT_FLOW] Attempting tab anchor download fallback tab=${discoveryState.tabId}`);
+      safeSendTabMessage(discoveryState.tabId, {
+        type: "SI_TRIGGER_DOWNLOAD",
+        url: url,
+        filename: fn,
+      }).then((tabRes) => {
         currentRun.exportInProgress = false;
-        const lastErr = chrome.runtime.lastError;
-        if (lastErr) {
-          const errMsg = lastErr.message || String(lastErr);
-          console.error(`[SI][EXPORT_FLOW][DOWNLOAD_ERROR] ${errMsg}`);
+        if (tabRes && tabRes.ok) {
+          console.log(`[SI][EXPORT_FLOW][TAB_DOWNLOAD_SUCCESS] filename="${fn}"`);
+          currentRun.exportCompleted = true;
+          currentRun.autoDownloadedFilename = fn;
+          safeSendRuntimeMessage({
+            type: "SI_EXPORT_COMPLETE",
+            runId: exportRunId,
+            rowCount: leads.length,
+            filename: fn,
+            format: exportFormat,
+          });
+          if (typeof customSendResponse === "function") {
+            customSendResponse({ ok: true, filename: fn, rowCount: leads.length, format: exportFormat });
+          }
+        } else {
+          console.error(`[SI][EXPORT_FLOW][TAB_DOWNLOAD_FAILED]`, tabRes?.error || errMsg);
           safeSendRuntimeMessage({
             type: "SI_EXPORT_FAILED",
             runId: exportRunId,
@@ -443,49 +480,87 @@ function executeExportDownload(customSendResponse, format = "csv", providedLeads
           if (typeof customSendResponse === "function") {
             customSendResponse({ ok: false, error: errMsg });
           }
-        } else {
-          console.log(`[SI][EXPORT_FLOW][DOWNLOAD_SUCCESS] id=${downloadId}`);
-          currentRun.exportCompleted = true;
-          currentRun.lastExportedDownloadId = downloadId;
-          currentRun.lastExportedFilename = filename;
-          safeSendRuntimeMessage({
-            type: "SI_EXPORT_COMPLETE",
-            runId: exportRunId,
-            rowCount: leads.length,
-            filename: filename,
-            downloadId: downloadId,
-            format: exportFormat,
-          });
-          if (typeof customSendResponse === "function") {
-            customSendResponse({ ok: true, downloadId, filename, rowCount: leads.length, format: exportFormat });
+        }
+      });
+    } else {
+      currentRun.exportInProgress = false;
+      safeSendRuntimeMessage({
+        type: "SI_EXPORT_FAILED",
+        runId: exportRunId,
+        error: errMsg,
+      });
+      if (typeof customSendResponse === "function") {
+        customSendResponse({ ok: false, error: errMsg });
+      }
+    }
+  }
+
+  try {
+    if (typeof chrome !== "undefined" && chrome.downloads && typeof chrome.downloads.download === "function") {
+      chrome.downloads.download(
+        {
+          url: dataUrl,
+          filename: filename,
+          saveAs: false,
+        },
+        (downloadId) => {
+          const lastErr = chrome.runtime.lastError;
+          if (lastErr) {
+            const errMsg = lastErr.message || String(lastErr);
+            console.warn(`[SI][EXPORT_FLOW][DOWNLOAD_ERROR] ${errMsg} — attempting tab fallback`);
+            performTabDownloadFallback(dataUrl, filename, errMsg);
+          } else {
+            currentRun.exportInProgress = false;
+            console.log(`[SI][EXPORT_FLOW][DOWNLOAD_SUCCESS] id=${downloadId}`);
+            currentRun.exportCompleted = true;
+            currentRun.lastExportedDownloadId = downloadId;
+            currentRun.lastExportedFilename = filename;
+            currentRun.autoDownloadedFilename = filename;
+            safeSendRuntimeMessage({
+              type: "SI_EXPORT_COMPLETE",
+              runId: exportRunId,
+              rowCount: leads.length,
+              filename: filename,
+              downloadId: downloadId,
+              format: exportFormat,
+            });
+            if (typeof customSendResponse === "function") {
+              customSendResponse({ ok: true, downloadId, filename, rowCount: leads.length, format: exportFormat });
+            }
           }
         }
-      }
-    );
-  } catch (syncErr) {
-    currentRun.exportInProgress = false;
-    const errMsg = syncErr?.message || String(syncErr);
-    console.error(`[SI][EXPORT_FLOW][DOWNLOAD_ERROR] ${errMsg}`);
-    safeSendRuntimeMessage({
-      type: "SI_EXPORT_FAILED",
-      runId: exportRunId,
-      error: errMsg,
-    });
-    if (typeof customSendResponse === "function") {
-      customSendResponse({ ok: false, error: errMsg });
+      );
+    } else {
+      console.warn("[SI][EXPORT_FLOW] chrome.downloads API not available in current environment — attempting tab fallback");
+      performTabDownloadFallback(dataUrl, filename, "chrome.downloads API unavailable");
     }
+  } catch (syncErr) {
+    const errMsg = syncErr?.message || String(syncErr);
+    console.error(`[SI][EXPORT_FLOW][DOWNLOAD_ERROR] ${errMsg} — attempting tab fallback`);
+    performTabDownloadFallback(dataUrl, filename, errMsg);
   }
 }
 
 function getRunStats() {
+  const readyCount = currentRun.readyLeads.length;
+  const failedCount = currentRun.failedLeads.length;
+  const duplicatesCount = (currentRun.results || []).filter(
+    (r) => r && r.enrichmentStatus === "duplicate_skipped"
+  ).length;
+
   return {
-    discovered: currentRun.candidates.length,
-    enrichmentStarted: currentRun.readyLeads.length + currentRun.failedLeads.length,
-    clickAttempted: currentRun.readyLeads.length + currentRun.failedLeads.length,
-    detailPanelReady: currentRun.readyLeads.length,
-    identityVerified: currentRun.readyLeads.length,
-    enrichmentCompleted: currentRun.readyLeads.length,
-    enrichmentFailed: currentRun.failedLeads.length,
+    discovered: currentRun.totalDiscovered || currentRun.candidates.length,
+    qualified: currentRun.candidates.length,
+    enriched: readyCount,
+    ready: readyCount,
+    failed: failedCount,
+    duplicatesSkipped: duplicatesCount,
+    enrichmentStarted: readyCount + failedCount,
+    clickAttempted: readyCount + failedCount,
+    detailPanelReady: readyCount,
+    identityVerified: readyCount,
+    enrichmentCompleted: readyCount,
+    enrichmentFailed: failedCount,
   };
 }
 
@@ -529,6 +604,7 @@ function broadcastProgress(statusText) {
       stats: getRunStats(),
       runId: currentRun.runId,
       statusText,
+      autoDownloaded: Boolean(currentRun.autoDownloadTriggered),
     });
   } else if (currentRun.status === "cancelled") {
     safeSendRuntimeMessage({
@@ -848,6 +924,13 @@ async function processNextCandidateInRun(index) {
     console.log(
       `[SI][RUN][COMPLETE] requested=${currentRun.requestedLimit} completed=${readyLeads.length} failed=${currentRun.failedLeads.length} pending=0`
     );
+    // Automatic download of CSV upon completion
+    if (currentRun.autoDownload && readyLeads.length > 0 && !currentRun.autoDownloadTriggered) {
+      currentRun.autoDownloadTriggered = true;
+      console.log(`[SI][AUTO_DOWNLOAD] Automatically downloading CSV for ${readyLeads.length} leads`);
+      executeExportDownload(null, "csv", readyLeads);
+    }
+
     broadcastProgress("Extraction complete.");
     return;
   }
@@ -930,7 +1013,7 @@ function parseQueryFromUrl(urlStr) {
   return null;
 }
 
-async function startDiscoverySession(tabId, limit, queryOverride) {
+async function startDiscoverySession(tabId, limit, queryOverride, autoDownload = true) {
   const getTargetTab = () =>
     new Promise((resolve) => {
       if (tabId) {
@@ -954,7 +1037,7 @@ async function startDiscoverySession(tabId, limit, queryOverride) {
   }
 
   const activeTabId = targetTab.id;
-  const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+  const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 500);
 
   // Resolve live page query synchronously from content script or tab URL
   let pageQuery = null;
@@ -989,7 +1072,7 @@ async function startDiscoverySession(tabId, limit, queryOverride) {
   console.log(`[SI][DISCOVERY][START] tabId=${activeTabId} requestedLimit=${requestedLimit} query="${canonicalQuery}"`);
 
   // Start completely fresh run with canonical query
-  startNewRun(canonicalQuery, requestedLimit);
+  startNewRun(canonicalQuery, requestedLimit, autoDownload);
   discoveryState.tabId = activeTabId;
 
   console.log(`[SI][DISCOVERY][QUERY] sending BUILD_DISCOVERY_QUEUE to tab ${activeTabId}`);
@@ -1022,6 +1105,8 @@ async function startDiscoverySession(tabId, limit, queryOverride) {
   const rawDiscovered = res.queue || [];
   console.log(`[SI][RUN][START] runId=${currentRun.runId} query="${canonicalQuery}" requestedLimit=${requestedLimit}`);
   console.log(`[SI][DISCOVERY][CARDS] count=${rawDiscovered.length}`);
+
+  currentRun.totalDiscovered = rawDiscovered.length;
 
   const selected = rawDiscovered.slice(0, currentRun.requestedLimit);
   console.log(`[SI][DISCOVERY][SELECTED] count=${selected.length}`);
@@ -1100,10 +1185,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           cardCount: mapsState.cardCount,
           searchQuery: mapsState.searchQuery,
           running: currentRun.status === "running",
+          status: currentRun.status,
           stats: getRunStats(),
           readyCount: readyLeads.length,
           records: readyLeads,
+          leads: readyLeads,
           runId: currentRun.runId,
+          requestedLimit: currentRun.requestedLimit,
+          autoDownloaded: Boolean(currentRun.autoDownloadTriggered),
+          autoDownloadedFilename: currentRun.autoDownloadedFilename || null,
         });
         return;
       }
@@ -1129,10 +1219,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         cardCount: mapsState.cardCount,
         searchQuery: mapsState.searchQuery,
         running: currentRun.status === "running",
+        status: currentRun.status,
         stats: getRunStats(),
         readyCount: readyLeads.length,
         records: readyLeads,
+        leads: readyLeads,
         runId: currentRun.runId,
+        requestedLimit: currentRun.requestedLimit,
+        autoDownloaded: Boolean(currentRun.autoDownloadTriggered),
+        autoDownloadedFilename: currentRun.autoDownloadedFilename || null,
       });
     });
     return true;
@@ -1230,7 +1325,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // --- SI_START_DISCOVERY ---
   if (message.type === "SI_START_DISCOVERY") {
     const tabId = message.tabId || (sender && sender.tab ? sender.tab.id : null);
-    startDiscoverySession(tabId, message.limit, message.query).then((res) => {
+    startDiscoverySession(tabId, message.limit, message.query, message.autoDownload).then((res) => {
       sendResponse(res);
     });
     return true;

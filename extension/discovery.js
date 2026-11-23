@@ -91,7 +91,7 @@
 
   async function buildCandidateQueue(limit) {
     const ad = getAdapter();
-    const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 500);
     const query = (ad ? ad.currentQuery() : "") || "";
 
     console.log(`[SI][DISCOVERY_TEST][RUN_START] query="${query}" requestedLimit=${requestedLimit}`);
@@ -157,34 +157,141 @@
 
     scanVisibleCards();
 
-    // Bounded Scroll Discovery Phase (up to 5 passes)
-    const maxPasses = 5;
+    function isRealEndOfResults(scrollContainer) {
+      if (!scrollContainer) return false;
+
+      // Only inspect visible elements within the scrollContainer feed
+      const candidates = scrollContainer.querySelectorAll("span.HlvSq, div.PbZDve, p.fontBodyMedium, p, span, div");
+      for (const el of candidates) {
+        if (!el) continue;
+        // Element must be attached, rendered, and visible in layout
+        const isVisible = Boolean(el.offsetParent !== null || el.offsetHeight > 0);
+        if (!isVisible) continue;
+
+        const txt = (el.textContent || "").trim().toLowerCase();
+        if (!txt || txt.length < 5) continue;
+
+        // Must match explicit end-of-list wording
+        if (
+          txt.includes("you've reached the end of the list") ||
+          txt.includes("you have reached the end of the list") ||
+          txt.includes("reached the end of the list") ||
+          txt.includes("end of the list") ||
+          txt.includes("end of list") ||
+          txt.includes("ende der liste") ||
+          txt.includes("fin de la liste") ||
+          txt.includes("final de la lista")
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Bounded Scroll Discovery Phase: scales with requested limit (up to 120 passes for high limits)
+    const maxPasses = Math.min(Math.max(Math.ceil(requestedLimit / 3), 15), 120);
     let pass = 0;
+    let consecutiveStalled = 0;
 
     while (pass < maxPasses && candidateMap.size < requestedLimit && container) {
       pass++;
       const before = candidateMap.size;
-      const scrollTopBefore = container.scrollTop;
 
-      if (typeof container.scrollBy === "function") {
-        container.scrollBy(0, 800);
+      // Scroll container down to bottom
+      if (typeof container.scrollTo === "function") {
+        container.scrollTo(0, container.scrollHeight);
+      } else if (typeof container.scrollBy === "function") {
+        container.scrollBy(0, 1200);
       } else {
-        container.scrollTop = scrollTopBefore + 800;
+        container.scrollTop = container.scrollHeight;
       }
 
-      await sleep(400);
+      // Dispatch scroll event so Google Maps infinite-scroll listeners trigger
+      try {
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      } catch (e) {}
+
+      // Initial delay to allow rendering
+      await sleep(500);
       scanVisibleCards();
 
       const after = candidateMap.size;
-      if (after === before && ad && typeof ad.reachedEnd === "function" && ad.reachedEnd()) {
+
+      // If new cards were added, keep going immediately!
+      if (after > before) {
+        consecutiveStalled = 0;
+        continue;
+      }
+
+      // If no new cards discovered, check if the real end-of-list text banner is already visible
+      if (isRealEndOfResults(container)) {
+        console.log(`[SI][DISCOVERY] True end of search results marker reached at ${candidateMap.size} candidates.`);
+        break;
+      }
+
+      // Bounded wait loop (up to 4000ms, polling every 400ms) for Google Maps network request to resolve
+      const maxWaitMs = 4000;
+      const pollInterval = 400;
+      let waitedMs = 0;
+      let foundNew = false;
+
+      while (waitedMs < maxWaitMs) {
+        await sleep(pollInterval);
+        waitedMs += pollInterval;
+
+        const newlyAdded = scanVisibleCards();
+        if (newlyAdded > 0) {
+          foundNew = true;
+          console.log(`[SI][DISCOVERY] Results updated after ${waitedMs}ms (+${newlyAdded} new cards, total=${candidateMap.size})`);
+          break;
+        }
+
+        // Check if true end of list appeared while waiting
+        if (isRealEndOfResults(container)) {
+          console.log(`[SI][DISCOVERY] True end of list appeared after ${waitedMs}ms.`);
+          break;
+        }
+
+        // Periodic scroll nudge to keep Google Maps infinite scroll loading
+        if (waitedMs % 800 === 0 && container) {
+          try {
+            container.scrollBy(0, -60);
+            await sleep(60);
+            if (typeof container.scrollTo === "function") {
+              container.scrollTo(0, container.scrollHeight);
+            } else {
+              container.scrollBy(0, 500);
+            }
+            container.dispatchEvent(new Event("scroll", { bubbles: true }));
+          } catch (e) {}
+        }
+      }
+
+      if (foundNew) {
+        consecutiveStalled = 0;
+        continue;
+      }
+
+      if (isRealEndOfResults(container)) {
+        console.log(`[SI][DISCOVERY] End of list confirmed after ${waitedMs}ms wait.`);
+        break;
+      }
+
+      consecutiveStalled++;
+      console.log(`[SI][DISCOVERY] Pass ${pass}: No new cards after wait (stalled ${consecutiveStalled}/4).`);
+
+      // Require 4 consecutive stalled cycles (16 seconds of zero new cards) before concluding feed exhaustion
+      if (consecutiveStalled >= 4) {
+        console.log(`[SI][DISCOVERY] Feed exhausted after ${consecutiveStalled} wait cycles. Concluding discovery at ${candidateMap.size} candidates.`);
         break;
       }
     }
 
-    // Scroll container back to top
+    // Scroll container back to top and dispatch scroll event for Google Maps
     if (container && typeof container.scrollTo === "function") {
       try {
         container.scrollTo(0, 0);
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
       } catch (e) {}
     }
 
@@ -199,6 +306,155 @@
   }
 
   let lastEnrichedPanelName = null;
+
+  function fastFindCardElement(candidate, ad) {
+    if (!candidate) return null;
+
+    // A. Direct Place ID query (takes 0.1ms)
+    if (candidate.place_id && typeof document !== "undefined") {
+      try {
+        const link = document.querySelector(`a.hfpxzc[href*="${candidate.place_id}"]`);
+        if (link) {
+          return link.closest('div[role="article"], div.Nv2PK') || link;
+        }
+      } catch (e) {}
+    }
+
+    // B. Direct aria-label query (takes 0.1ms)
+    if (candidate.company_name && typeof CSS !== "undefined" && CSS.escape && typeof document !== "undefined") {
+      try {
+        const escaped = CSS.escape(candidate.company_name);
+        const link = document.querySelector(`a.hfpxzc[aria-label="${escaped}"]`);
+        if (link) {
+          return link.closest('div[role="article"], div.Nv2PK') || link;
+        }
+      } catch (e) {}
+    }
+
+    // C. Adapter fallback
+    if (ad && typeof ad.findCurrentCardElement === "function") {
+      return ad.findCurrentCardElement(candidate);
+    }
+    return null;
+  }
+
+  function getActiveH1Name() {
+    if (typeof document === "undefined") return null;
+    const h1s = document.querySelectorAll(
+      'h1.DUwif, h1.fontTitleLarge, h1.section-hero-header-title-title, div[role="main"] h1, h1'
+    );
+    for (const h1 of h1s) {
+      const txt = (h1.textContent || "").trim();
+      if (txt && !(self.SalesIntelValidators?.isUIElementTitle?.(txt))) {
+        return txt;
+      }
+    }
+    return null;
+  }
+
+  async function scrollFeedToFindCard(candidate, ad) {
+    if (!candidate) return null;
+
+    // 1. Instant check if already in DOM
+    let cardEl = fastFindCardElement(candidate, ad);
+    if (cardEl) return cardEl;
+
+    const { element: container } = findScrollableResultsContainer();
+    if (!container) return null;
+
+    console.log(`[SI][FEED_SCROLL] Scrolling feed to locate "${candidate.company_name}"...`);
+
+    // 2. Incremental forward scroll with scroll event dispatching for Google Maps virtual list
+    let scrollStep = 0;
+    const maxSteps = 35;
+
+    while (!cardEl && scrollStep < maxSteps) {
+      scrollStep++;
+
+      if (typeof container.scrollBy === "function") {
+        container.scrollBy(0, 800);
+      } else {
+        container.scrollTop += 800;
+      }
+
+      // CRITICAL: Dispatch scroll event so Google Maps infinite-scroll virtual list listener triggers
+      try {
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      } catch (e) {}
+
+      await sleep(150);
+      cardEl = fastFindCardElement(candidate, ad);
+      if (cardEl) {
+        console.log(`[SI][FEED_SCROLL] Located "${candidate.company_name}" on step ${scrollStep}`);
+        return cardEl;
+      }
+
+      // If near bottom of container, nudge to trigger Google Maps feed pagination
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 60) {
+        try {
+          container.scrollBy(0, -50);
+          await sleep(50);
+          if (typeof container.scrollTo === "function") {
+            container.scrollTo(0, container.scrollHeight);
+          } else {
+            container.scrollTop = container.scrollHeight;
+          }
+          container.dispatchEvent(new Event("scroll", { bubbles: true }));
+        } catch (e) {}
+        await sleep(350);
+        cardEl = fastFindCardElement(candidate, ad);
+        if (cardEl) {
+          console.log(`[SI][FEED_SCROLL] Located "${candidate.company_name}" after pagination nudge on step ${scrollStep}`);
+          return cardEl;
+        }
+      }
+    }
+
+    // 3. Fallback: If not found and scrolled far down, search from top downwards
+    if (!cardEl && container.scrollTop > 600) {
+      try {
+        container.scrollTo(0, 0);
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      } catch (e) {}
+      await sleep(250);
+      cardEl = fastFindCardElement(candidate, ad);
+      if (cardEl) return cardEl;
+
+      let retryStep = 0;
+      while (!cardEl && retryStep < maxSteps) {
+        retryStep++;
+        if (typeof container.scrollBy === "function") {
+          container.scrollBy(0, 800);
+        } else {
+          container.scrollTop += 800;
+        }
+        try {
+          container.dispatchEvent(new Event("scroll", { bubbles: true }));
+        } catch (e) {}
+        await sleep(150);
+        cardEl = fastFindCardElement(candidate, ad);
+        if (cardEl) return cardEl;
+
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 60) {
+          try {
+            container.scrollBy(0, -50);
+            await sleep(50);
+            if (typeof container.scrollTo === "function") {
+              container.scrollTo(0, container.scrollHeight);
+            } else {
+              container.scrollTop = container.scrollHeight;
+            }
+            container.dispatchEvent(new Event("scroll", { bubbles: true }));
+          } catch (e) {}
+          await sleep(350);
+          cardEl = fastFindCardElement(candidate, ad);
+          if (cardEl) return cardEl;
+        }
+      }
+    }
+
+    return cardEl;
+  }
 
   async function handleEnrichCandidate(candidate, index, previousName, runId, sourceQuery, attemptId) {
     if (!isContextValid() || !candidate || !candidate.company_name) return;
@@ -216,33 +472,52 @@
     console.log(`[SI][DETAIL_PIPELINE][START]\nindex=${idx}\ncandidateId=${candidateId}\nexpectedName=${name}`);
 
     try {
-      // 1. Locate DOM card element matching candidate identity
-      const cardEl = ad ? ad.findCurrentCardElement(candidate) : null;
-      if (cardEl) {
-        console.log(`[SI][LOOP][${idx}][CARD_FOUND]`);
+      // 1. Locate DOM card element matching candidate identity (with virtual scroll event pagination)
+      let cardEl = await scrollFeedToFindCard(candidate, ad);
+
+      if (!cardEl) {
+        console.warn(`[SI][LOOP][${idx}][PRESERVE_LEAD] Card element not mounted in DOM for "${name}". Preserving qualified Mode A lead.`);
+        // Fallback: Preserve qualified candidate with complete Mode A data so lead is never lost
+        candidate.source = "result_card";
+        candidate.extraction_mode = "mode_a_result_cards";
+        candidate.runId = activeRunId;
+        candidate.sourceQuery = activeQuery;
+        chrome.runtime.sendMessage({
+          type: "SI_DETAIL_READY",
+          index: idx,
+          detailLead: candidate,
+          runId: activeRunId,
+          sourceQuery: activeQuery,
+          attemptId: activeAttemptId,
+        });
+        return;
       }
 
-      // 2. Trigger Click on candidate card
-      if (cardEl) {
-        try {
-          const link =
-            cardEl.querySelector("a.hfpxzc") ||
-            cardEl.querySelector("div.qBF1Pd") ||
-            cardEl.querySelector("button") ||
-            cardEl;
-          if (link) {
-            if (typeof link.scrollIntoView === "function") {
-              link.scrollIntoView({ block: "center" });
-            }
-            const evt = new MouseEvent("click", { bubbles: true, cancelable: true, view: window });
-            link.dispatchEvent(evt);
-            if (typeof link.click === "function") {
-              link.click();
-            }
-            console.log(`[SI][LOOP][${idx}][CLICK]`);
+      console.log(`[SI][LOOP][${idx}][CARD_FOUND]`);
+
+      // 2. Trigger Click on candidate card with full pointer/mouse sequence for instant Google Maps reaction
+      try {
+        const link =
+          cardEl.querySelector("a.hfpxzc") ||
+          cardEl.querySelector("div.qBF1Pd") ||
+          cardEl.querySelector("button") ||
+          cardEl;
+        if (link) {
+          if (typeof link.scrollIntoView === "function") {
+            link.scrollIntoView({ block: "center", behavior: "auto" });
           }
-        } catch (e) {}
-      }
+          const eventOpts = { bubbles: true, cancelable: true, view: window };
+          link.dispatchEvent(new PointerEvent("pointerdown", eventOpts));
+          link.dispatchEvent(new MouseEvent("mousedown", eventOpts));
+          link.dispatchEvent(new PointerEvent("pointerup", eventOpts));
+          link.dispatchEvent(new MouseEvent("mouseup", eventOpts));
+          link.dispatchEvent(new MouseEvent("click", eventOpts));
+          if (typeof link.click === "function") {
+            link.click();
+          }
+          console.log(`[SI][LOOP][${idx}][CLICK]`);
+        }
+      } catch (e) {}
 
       chrome.runtime.sendMessage({
         type: "SI_CLICK_ATTEMPTED",
@@ -252,46 +527,80 @@
         sourceQuery: activeQuery,
       });
 
-      // 3. Bounded Wait for Detail Panel to match candidate identity
+      // 3. Fast & Bounded Wait for Detail Panel to match candidate identity
+      const extractor = self.SalesIntelDetailExtractor || window.SalesIntelDetailExtractor;
+      const isIdMatch = (actual, expected) => {
+        if (!actual || !expected) return false;
+        if (extractor && typeof extractor.isIdentityMatch === "function") {
+          return extractor.isIdentityMatch(actual, expected);
+        }
+        return actual.toLowerCase().trim() === expected.toLowerCase().trim();
+      };
+
       let attempts = 0;
-      const maxAttempts = 22; // 22 * 400ms = 8800ms
+      const pollIntervalMs = 120; // Fast 120ms polling interval (down from 400ms)
+      const maxAttempts = 60; // 60 * 120ms = ~7200ms total bounded safety window
       let extracted = null;
       let panelName = null;
 
       while (attempts < maxAttempts) {
-        await sleep(400);
         attempts++;
 
         if (!isContextValid()) return;
 
-        const activeRoot = ad?.detailExtractor ? ad.detailExtractor.getActiveDetailPanel(null) : null;
-        if (activeRoot?.companyName) {
-          panelName = activeRoot.companyName;
+        // Fast check: inspect active H1 heading text without triggering heavy DOM extraction
+        const currentH1 = getActiveH1Name();
+
+        // If prevName exists and current H1 still shows prevName, detail panel hasn't transitioned yet
+        if (prevName && currentH1 && !isIdMatch(name, prevName) && isIdMatch(currentH1, prevName)) {
+          panelName = currentH1;
+          // If stuck on previous business after 10 attempts (~1.2s), re-dispatch click to assist Maps event handler
+          if (attempts === 10 || attempts === 25) {
+            try {
+              const link =
+                cardEl.querySelector("a.hfpxzc") ||
+                cardEl.querySelector("div.qBF1Pd") ||
+                cardEl.querySelector("button") ||
+                cardEl;
+              if (link) {
+                link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                if (typeof link.click === "function") link.click();
+              }
+            } catch (e) {}
+          }
+          await sleep(pollIntervalMs);
+          continue;
         }
 
-        const currentDetail = ad ? ad.extractDetailPanel(name) : null;
+        if (currentH1) {
+          panelName = currentH1;
+        }
 
-        if (currentDetail && currentDetail.company_name) {
-          const extractor = self.SalesIntelDetailExtractor || window.SalesIntelDetailExtractor;
-
-          // If prevName exists and differs from name, ensure detail panel has moved away from prevName
-          if (prevName && extractor && extractor.isIdentityMatch && !extractor.isIdentityMatch(name, prevName)) {
-            if (extractor.isIdentityMatch(currentDetail.company_name, prevName)) {
-              // Still showing previous panel
-              continue;
-            }
-          }
-
-          const isMatch = extractor && extractor.isIdentityMatch
-            ? extractor.isIdentityMatch(currentDetail.company_name, name)
-            : (currentDetail.company_name.toLowerCase().trim() === name.toLowerCase().trim());
-
-          if (isMatch) {
+        // When H1 matches target candidate identity, extract full detail panel
+        if (currentH1 && isIdMatch(currentH1, name)) {
+          const currentDetail = ad ? ad.extractDetailPanel(name) : null;
+          if (currentDetail && currentDetail.company_name && isIdMatch(currentDetail.company_name, name)) {
             extracted = currentDetail;
             panelName = currentDetail.company_name;
             break;
           }
         }
+
+        // Fallback: every 3rd attempt (~360ms), run extractDetailPanel in case H1 had non-standard styling
+        if (attempts % 3 === 0) {
+          const currentDetail = ad ? ad.extractDetailPanel(name) : null;
+          if (currentDetail && currentDetail.company_name) {
+            if (!(prevName && !isIdMatch(name, prevName) && isIdMatch(currentDetail.company_name, prevName))) {
+              if (isIdMatch(currentDetail.company_name, name)) {
+                extracted = currentDetail;
+                panelName = currentDetail.company_name;
+                break;
+              }
+            }
+          }
+        }
+
+        await sleep(pollIntervalMs);
       }
 
       console.log(`[SI][DETAIL_PIPELINE][PANEL_OPEN]\nindex=${idx}\nexpectedName=${name}\npanelName=${panelName || ""}`);
@@ -305,16 +614,16 @@
       );
 
       if (!extractedExists) {
-        const failReason = panelName ? "IDENTITY_MISMATCH" : "DETAIL_PANEL_TIMEOUT";
-        if (panelName && extracted) {
-          console.log(`[SI][DETAIL_PIPELINE][IDENTITY_FAILED]\nindex=${idx}\nexpected=${name}\nactual=${extracted.company_name}`);
-        }
-        console.log(`[SI][DETAIL_PIPELINE][EXTRACT_FAILED]\nindex=${idx}\nreason=${failReason}`);
+        console.warn(`[SI][LOOP][${idx}][PRESERVE_LEAD] Detail panel timed out for "${name}". Preserving qualified Mode A lead.`);
+        // Fallback: Preserve qualified candidate with complete Mode A data so lead is never lost
+        candidate.source = "result_card";
+        candidate.extraction_mode = "mode_a_result_cards";
+        candidate.runId = activeRunId;
+        candidate.sourceQuery = activeQuery;
         chrome.runtime.sendMessage({
-          type: "SI_CANDIDATE_FAILED",
+          type: "SI_DETAIL_READY",
           index: idx,
-          name,
-          reason: failReason,
+          detailLead: candidate,
           runId: activeRunId,
           sourceQuery: activeQuery,
           attemptId: activeAttemptId,
@@ -461,6 +770,21 @@
           message.sourceQuery,
           message.attemptId || null
         );
+        return true;
+      }
+
+      if (message.type === "SI_TRIGGER_DOWNLOAD") {
+        try {
+          const a = document.createElement("a");
+          a.href = message.url;
+          a.download = message.filename || "ramos-export.csv";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: e?.message });
+        }
         return true;
       }
 

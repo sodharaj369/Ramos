@@ -26,6 +26,8 @@
     detectedInfo: document.getElementById("detectedInfo"),
     openMapsBtn: document.getElementById("openMapsBtn"),
     importLimit: document.getElementById("importLimit"),
+    autoDownloadCsv: document.getElementById("autoDownloadCsv"),
+    autoDownloadBanner: document.getElementById("autoDownloadBanner"),
     extractBtn: document.getElementById("extractBtn"),
     stopBtn: document.getElementById("stopBtn"),
     progressContainer: document.getElementById("progressContainer"),
@@ -128,6 +130,7 @@
 
   // Watchdog & Run Tracking
   let activeRunId = null;
+  let autoDownloadTriggeredInPopup = false;
   let discoveryWatchdogTimer = null;
 
   function clearDiscoveryWatchdog() {
@@ -139,14 +142,16 @@
 
   function resetDiscoveryWatchdog() {
     clearDiscoveryWatchdog();
+    const limitVal = Number(el.importLimit?.value) || 10;
+    const timeoutMs = Math.max(120000, limitVal * 15000);
     discoveryWatchdogTimer = setTimeout(() => {
-      console.warn("[RAMOS][WATCHDOG] Discovery watchdog expired (45s). Forcing terminal UI state.");
+      console.warn(`[RAMOS][WATCHDOG] Discovery watchdog expired (${timeoutMs}ms). Forcing terminal UI state.`);
       handleDiscoveryTerminalState({
         status: "timeout",
         leads: currentExtractedLeads,
         error: "Maps results timed out — check that the search results are loaded.",
       });
-    }, 45000);
+    }, timeoutMs);
   }
 
   function showToast(msg, type = "success") {
@@ -338,7 +343,12 @@
   }
 
   function csvToDataUrl(csvString) {
-    return `data:text/csv;charset=utf-8,${encodeURIComponent(csvString)}`;
+    try {
+      const bytes = new TextEncoder().encode(csvString);
+      return uint8ToDataUrl(bytes, "text/csv;charset=utf-8");
+    } catch {
+      return `data:text/csv;charset=utf-8,${encodeURIComponent(csvString)}`;
+    }
   }
 
   function fallbackAnchorDownload(url, filename) {
@@ -436,7 +446,12 @@
             : "No search results visible on map";
       }
       if (el.openMapsBtn) el.openMapsBtn.classList.add("hidden");
-      if (el.extractBtn) el.extractBtn.disabled = false;
+      if (el.extractBtn) {
+        el.extractBtn.disabled = false;
+        if (currentExtractedLeads.length > 0 && !el.extractBtn.textContent.includes("Again")) {
+          el.extractBtn.textContent = "Run Discovery Again";
+        }
+      }
     } else {
       el.mapsDot.className = "maps-dot red";
       el.mapsStatusTitle.textContent = "Google Maps not detected";
@@ -541,6 +556,17 @@
       updateEnrichmentUI(currentExtractedLeads);
       if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = false;
       if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = false;
+
+      // Auto-download handling & visible confirmation banner
+      if (status === "completed") {
+        if (payload?.autoDownloaded) {
+          if (el.autoDownloadBanner) el.autoDownloadBanner.classList.remove("hidden");
+        } else if (el.autoDownloadCsv?.checked && !autoDownloadTriggeredInPopup) {
+          autoDownloadTriggeredInPopup = true;
+          if (el.autoDownloadBanner) el.autoDownloadBanner.classList.remove("hidden");
+          triggerMapsExport("csv");
+        }
+      }
     } else {
       // Zero leads terminal state
       if (el.resultSummary) el.resultSummary.classList.add("hidden");
@@ -571,6 +597,7 @@
 
       // SI_EXPORT_COMPLETE / SI_EXPORT_FAILED
       if (message.type === "SI_EXPORT_COMPLETE") {
+        if (el.autoDownloadBanner) el.autoDownloadBanner.classList.remove("hidden");
         const fmtUpper = (message.format || "CSV").toUpperCase();
         showToast(`Exported ${message.rowCount} leads to ${fmtUpper}.`, "success");
         return;
@@ -670,8 +697,9 @@
   }
 
   function startExtraction() {
-    const limit = Math.min(Math.max(Number(el.importLimit?.value) || 10, 1), 50);
+    const limit = Math.min(Math.max(Number(el.importLimit?.value) || 10, 1), 500);
     if (el.resultSummary) el.resultSummary.classList.add("hidden");
+    if (el.autoDownloadBanner) el.autoDownloadBanner.classList.add("hidden");
     if (el.extractBtn) el.extractBtn.classList.add("hidden");
     if (el.stopBtn) el.stopBtn.classList.remove("hidden");
     if (el.progressContainer) el.progressContainer.classList.remove("hidden");
@@ -681,6 +709,7 @@
     // Strict State Isolation: Wipe previous leads and enrichment state for fresh search
     currentExtractedLeads = [];
     activeRunId = null;
+    autoDownloadTriggeredInPopup = false;
     if (enrichAbortController) {
       enrichAbortController.abort();
       enrichAbortController = null;
@@ -696,7 +725,8 @@
 
     resetDiscoveryWatchdog();
 
-    chrome.runtime.sendMessage({ type: "SI_START_DISCOVERY", limit }, (res) => {
+    const autoDownload = el.autoDownloadCsv ? el.autoDownloadCsv.checked : true;
+    chrome.runtime.sendMessage({ type: "SI_START_DISCOVERY", limit, autoDownload }, (res) => {
       if (chrome.runtime.lastError || !res || !res.ok) {
         clearDiscoveryWatchdog();
         const errorDetails = chrome.runtime.lastError
@@ -1399,12 +1429,92 @@
     el.webStopBtn?.addEventListener("click", () => stopWebsiteExtraction());
     el.webDownloadXlsxBtn?.addEventListener("click", () => exportWebsiteLead("xlsx"));
     el.webDownloadCsvBtn?.addEventListener("click", () => exportWebsiteLead("csv"));
+
+    // Auto-download preference & importLimit persistence
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["importLimit", "autoDownloadCsv"], (data) => {
+        if (data && data.importLimit && el.importLimit) {
+          el.importLimit.value = String(data.importLimit);
+        }
+        if (data && typeof data.autoDownloadCsv === "boolean" && el.autoDownloadCsv) {
+          el.autoDownloadCsv.checked = data.autoDownloadCsv;
+        }
+      });
+      el.importLimit?.addEventListener("change", () => {
+        chrome.storage.local.set({ importLimit: el.importLimit.value });
+      });
+      el.autoDownloadCsv?.addEventListener("change", () => {
+        chrome.storage.local.set({ autoDownloadCsv: el.autoDownloadCsv.checked });
+      });
+    }
+  }
+
+  function restoreDiscoveryStateFromBackground() {
+    if (typeof chrome === "undefined" || !chrome.runtime || typeof chrome.runtime.sendMessage !== "function") return;
+
+    chrome.runtime.sendMessage({ type: "GET_DISCOVERY_STATE" }, (bgRes) => {
+      if (chrome.runtime.lastError || !bgRes || !bgRes.ok) return;
+
+      const leads = bgRes.records || bgRes.leads || [];
+
+      if (bgRes.requestedLimit && el.importLimit) {
+        el.importLimit.value = String(bgRes.requestedLimit);
+      }
+
+      // 1. Extraction actively running in background: restore progress view
+      if (bgRes.running) {
+        resetDiscoveryWatchdog();
+        if (el.progressContainer) el.progressContainer.classList.remove("hidden");
+        if (el.extractBtn) el.extractBtn.classList.add("hidden");
+        if (el.stopBtn) el.stopBtn.classList.remove("hidden");
+        if (el.resultSummary) el.resultSummary.classList.add("hidden");
+
+        const target = Number(el.importLimit?.value) || 10;
+        const total = bgRes.stats?.discovered || bgRes.cardCount || target;
+        const readyCount = bgRes.readyCount || (bgRes.stats && bgRes.stats.ready) || leads.length;
+        const pct = total > 0 ? Math.min(100, Math.max(5, Math.round((readyCount / total) * 100))) : 5;
+
+        if (el.progressBar) el.progressBar.style.width = `${pct}%`;
+        if (el.progressText) el.progressText.textContent = `Extracting ${readyCount} / ${total} leads...`;
+
+        if (leads.length > 0) {
+          currentExtractedLeads = leads;
+        }
+        return;
+      }
+
+      // 2. Extraction complete with exportable leads: restore results & download controls
+      if (leads.length > 0) {
+        currentExtractedLeads = leads;
+        handleDiscoveryTerminalState({
+          status: bgRes.status || "completed",
+          leads: leads,
+          stats: bgRes.stats || {
+            discovered: leads.length,
+            qualified: leads.length,
+            enriched: leads.length,
+            failed: 0,
+            ready: leads.length,
+          },
+          autoDownloaded: Boolean(bgRes.autoDownloaded),
+        });
+        if (el.extractBtn) {
+          el.extractBtn.textContent = "Run Discovery Again";
+          el.extractBtn.classList.remove("hidden");
+          el.extractBtn.disabled = false;
+        }
+        if (el.stopBtn) el.stopBtn.classList.add("hidden");
+        if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = false;
+        if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = false;
+      }
+    });
   }
 
   function initPopup() {
     listenForProgress();
     setupActions();
     checkGoogleMapsTab();
+    restoreDiscoveryStateFromBackground();
 
     setInterval(() => {
       if (currentActiveTabMode === "maps") {

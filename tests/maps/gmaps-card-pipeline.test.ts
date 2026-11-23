@@ -26,7 +26,7 @@ class TestRunEngine {
 
   startNewRun(query: string, limit: number) {
     const runId = "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-    const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const requestedLimit = Math.min(Math.max(Number(limit) || 10, 1), 500);
 
     this.currentRun = {
       runId,

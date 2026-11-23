@@ -7,6 +7,12 @@ This changelog is reconstructed strictly from repository evidence and git commit
 
 ## [1.0.6] — 2026-09-04 (Pilot Ready / Release Candidate)
 
+### Performance & Scalability Optimizations
+- **Detail Extraction Throughput**:
+  - Reduced detail panel extraction latency from 6–7s down to ~1.0–1.8s per business via fast indexed card finding (`fastFindCardElement`), 120ms polling (down from 400ms), and lightweight heading inspection (`getActiveH1Name()`) eliminating heavy redundant DOM extractions during transition.
+  - Added instant full pointer/mouse sequence dispatch (`pointerdown`, `mousedown`, `pointerup`, `mouseup`, `click`) for immediate Google Maps Closure UI response without smooth-scroll delays.
+  - Multiplied discovery capacity ceiling up to 500 leads with auto-download CSV upon completion and robust background progress restoration on popup reopen.
+
 ### Added
 - **Website Intelligence Subsystem (Phases 0–9)**:
   - **Single-Page Extraction (Phase 1)**: Extraction of business identity, contact channels, semantic addresses, OpenGraph metadata, and Schema.org JSON-LD / microdata.
