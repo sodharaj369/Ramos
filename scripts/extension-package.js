@@ -119,6 +119,7 @@ function packageExtension() {
     "shared/schema.js",
     "shared/xlsx-builder.js",
     "shared/deduplicator.js",
+    "shared/file-merger.js",
     "content/maps/dom-utils.js",
     "content/maps/selectors.js",
     "content/maps/validators.js",

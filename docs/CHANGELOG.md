@@ -29,8 +29,15 @@ This changelog is reconstructed strictly from repository evidence and git commit
   - **34-Column Enriched Export (Phase 8E)**: Upgraded enriched export layout to 34 columns (CSV & Sheet 1 of XLSX) and 7 columns (Sheet 2 "People" of XLSX).
 - **Production Hardening & RC Qualification (Phase 9)**:
   - Enforced bounded timeouts: 15s Maps candidate timeout, 6s batch enrichment fetch timeout, 10s interactive crawl timeout.
-  - Comprehensive automated test suite with **162 passing tests** and 0 failures.
-  - 100% packaged distribution file parity across 36 runtime files in `dist/ramos-maps-connector-v1.0.6.zip`.
+  - Comprehensive automated test suite with **166 passing tests** and 0 failures.
+  - 100% packaged distribution file parity across 37 runtime files in `dist/ramos-maps-connector-v1.0.6.zip`.
+- **Master File Merger & Deduplicator Utility (`shared/file-merger.js`)**:
+  - **Multi-File Upload**: Supports uploading 2 or more `.csv` and OpenXML `.xlsx` files simultaneously via drag-and-drop or file selector.
+  - **Zero-Dependency Native OpenXML Parser**: Decompresses and parses `.xlsx` workbooks client-side using browser-native `DecompressionStream("deflate-raw")` with zero npm packages.
+  - **Streaming RFC-4180 CSV Parser**: Robust single-pass streaming parser handling escaped quotes, embedded commas, newlines, and UTF-8 BOMs.
+  - **Column Normalization Engine**: Automatically translates diverse third-party CRM and scraper column headers (e.g. `Company/Business Name`, `Phone/Telephone/Mobile`, `Website/URL/Domain`, `Address/Location`) into canonical RAMOS lead fields.
+  - **Intelligent Deduplication & Union**: Uses `RamosDeduplicator` to combine duplicate leads across files, unioning corporate emails, phone numbers, social channels, and team members.
+  - **One-Click Master Exports**: Exports unified, clean master records to both 34-column Master Excel (`.xlsx`) and Master CSV (`.csv`).
 
 ---
 
