@@ -13,8 +13,8 @@
     <!-- Header -->
     <div class="header">
       <div class="brand">
-        <span class="logo-icon"><img src="assets/ramos-icon-32.png" width="20" height="20" alt="RAMOS"
-            style="vertical-align: middle; border-radius: 4px;"></span>
+        <span class="logo-icon"><img src="assets/ramos-icon-32.png" width="22" height="22" alt="RAMOS"
+            class="brand-icon-img"></span>
         <span class="brand-name">RAMOS</span>
         <span class="brand-sub">LEAD INTELLIGENCE</span>
         <span id="extVersion" class="version-tag">v1.0.6</span>
@@ -106,7 +106,7 @@
           <span id="summaryTitle" class="summary-title">Discovery Complete</span>
         </div>
 
-        <div id="autoDownloadBanner" class="auto-download-banner hidden" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #34d399; margin: 4px 0 10px; text-align: center;">
+        <div id="autoDownloadBanner" class="auto-download-banner hidden">
           ✓ CSV automatically saved to your Downloads folder.
         </div>
 
@@ -127,10 +127,8 @@
 
         <!-- Website Enrichment Subsystem (Phase 6) -->
         <div id="enrichSection" class="enrich-section mt-2">
-          <div class="enrich-header"
-            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span id="enrichStatusInfo" class="enrich-status-info" style="font-size: 11px; color: #94a3b8;">0 leads with
-              websites</span>
+          <div class="enrich-header">
+            <span id="enrichStatusInfo" class="enrich-status-info">0 leads with websites</span>
             <button id="enrichWebsitesBtn" class="btn btn-enrich" type="button">Enrich Websites</button>
             <button id="stopEnrichBtn" class="btn btn-danger hidden" type="button">Stop Enrichment</button>
           </div>
@@ -277,7 +275,13 @@
         <div id="mergeDropzone" class="merge-dropzone">
           <input type="file" id="mergeFileInput" multiple accept=".csv, .xlsx" style="display: none;" />
           <div class="dropzone-content">
-            <div class="dropzone-icon">📁</div>
+            <div class="dropzone-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="upload-icon-svg">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
             <div class="dropzone-text"><strong>Click to browse</strong> or drag files here</div>
             <div class="dropzone-sub">Supports multiple .csv and .xlsx files</div>
           </div>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#141724"/>
+      <stop offset="50%" stop-color="#0f111a"/>
+      <stop offset="100%" stop-color="#090a10"/>
+    </linearGradient>
+
+    <radialGradient id="ambientGlow" cx="62%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.22"/>
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#090a10" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="glyphGrad" x1="15%" y1="15%" x2="90%" y2="90%">
+      <stop offset="0%" stop-color="#939bf9"/>
+      <stop offset="40%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <radialGradient id="beaconGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="30%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </radialGradient>
+
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.04)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Container Squircle -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bgGrad)"/>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#ambientGlow)"/>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="none" stroke="url(#borderGrad)" stroke-width="1.2"/>
+
+  <!-- Radar Waves -->
+  <circle cx="80" cy="47" r="23" fill="none" stroke="#38bdf8" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.32"/>
+  <circle cx="80" cy="47" r="14" fill="none" stroke="#818cf8" stroke-width="1.2" opacity="0.4"/>
+
+  <!-- Geometric "R" Monogram -->
+  <path d="M 28 32 C 28 29.8, 29.8 28, 32 28 L 68 28 C 84 28, 94 36, 94 47.5 C 94 59, 84 66, 68 66 L 44 66 L 44 96 C 44 98.2, 42.2 100, 40 100 L 32 100 C 29.8 100, 28 98.2, 28 96 Z" fill="url(#glyphGrad)"/>
+
+  <!-- Loop Cutout -->
+  <path d="M 44 41 L 66 41 C 73 41, 78 43.5, 78 47.5 C 78 51.5, 73 54, 66 54 L 44 54 Z" fill="#0f111a"/>
+
+  <!-- Diagonal Leg -->
+  <path d="M 56 60 L 85 100 L 100 100 L 70 58 Z" fill="url(#glyphGrad)"/>
+
+  <!-- Precision Scanner Beacon -->
+  <circle cx="80" cy="47" r="4.5" fill="url(#beaconGrad)"/>
+  <circle cx="80" cy="47" r="1.8" fill="#ffffff"/>
+</svg>
