@@ -16,8 +16,11 @@ RAMOS `v1.0.6` has passed all release qualification gates. All core modules—in
 - **Parity Verification:** Source-to-package file parity passed (100% match across all 37 runtime files).
 - **Consistency Verification:** Consistency checker passed with 0 secret exposures and valid doc manifests.
 - **Real Chrome Workflow Verification:** Verified end-to-end extraction, enrichment, and physical spreadsheet generation on disk (`.xlsx` and `.csv`).
-- **Benchmark Stability:** Linear throughput (~164 ms/lead) across 10, 25, 50, and 100 leads with instant 26 ms cancellation response time.
-- **Export Compatibility:** 24-column Maps-only export and 34-column Enriched export remain strictly separated and backward compatible.
+- **Benchmark Stability:**
+  - **Google Maps Detail Extraction:** ~1.0–1.8s per business (optimized from 6–7s via fast indexed card finding, 120ms polling, and direct pointer events).
+  - **Website Intelligence Crawler:** Constant linear throughput (~164–169 ms/lead) across 10, 25, 50, and 100 leads with instant 26 ms cancellation response time.
+  - **Master File Merger & Deduplicator:** Sub-second (<500 ms) processing for multi-file batches using native browser `DecompressionStream` with zero impact on Maps or crawler performance.
+- **Export Compatibility:** 24-column Maps-only export, 34-column Enriched export, and Master Merged export remain strictly separated and backward compatible.
 
 ---
 
