@@ -131,10 +131,10 @@ RAMOS Chrome Extension (v1.0.6)
 ├── dist/                          # Packaged release archives (ramos-maps-connector-v1.0.6.zip)
 ├── docs/                          # Comprehensive specification & architecture documentation
 ├── scripts/                       # Packaging, consistency verification, and parity checking utilities
-└── tests/                         # Node.js test suites (166 passing tests)
+└── tests/                         # Node.js test suites (171 passing tests)
     ├── maps/                      # Google Maps card & detail pipeline regression tests (14 tests)
     ├── website/                   # Website Intelligence unit, crawler, enrichment, and export tests (143 tests)
-    └── qa/                        # End-to-end release candidate validation tests (9 tests)
+    └── qa/                        # End-to-end release candidate validation tests (14 tests)
 ```
 
 ---

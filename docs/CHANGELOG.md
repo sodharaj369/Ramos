@@ -29,7 +29,7 @@ This changelog is reconstructed strictly from repository evidence and git commit
   - **34-Column Enriched Export (Phase 8E)**: Upgraded enriched export layout to 34 columns (CSV & Sheet 1 of XLSX) and 7 columns (Sheet 2 "People" of XLSX).
 - **Production Hardening & RC Qualification (Phase 9)**:
   - Enforced bounded timeouts: 15s Maps candidate timeout, 6s batch enrichment fetch timeout, 10s interactive crawl timeout.
-  - Comprehensive automated test suite with **166 passing tests** and 0 failures.
+  - Comprehensive automated test suite with **171 passing tests** and 0 failures.
   - 100% packaged distribution file parity across 37 runtime files in `dist/ramos-maps-connector-v1.0.6.zip`.
 - **Master File Merger & Deduplicator Utility (`shared/file-merger.js`)**:
   - **Multi-File Upload**: Supports uploading 2 or more `.csv` and OpenXML `.xlsx` files simultaneously via drag-and-drop or file selector.

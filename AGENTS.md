@@ -101,7 +101,7 @@ Before writing or modifying any code, the AI agent MUST:
 
 After modifying code, the AI agent MUST execute and verify:
 
-1. [ ] **Run all automated tests**: `npm test` (all 162+ tests must pass).
+1. [ ] **Run all automated tests**: `npm test` (all 171+ tests must pass).
 2. [ ] **Run consistency checker**: `npm run check:consistency`.
 3. [ ] **Package extension**: `npm run package:extension`.
 4. [ ] **Verify packaged extension parity**: `node scripts/verify-packaged-extension-parity.js`.

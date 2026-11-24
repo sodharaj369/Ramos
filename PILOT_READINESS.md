@@ -1,7 +1,7 @@
 # RAMOS Lead Intelligence — Pilot Readiness Document
 
 **Version:** `v1.0.6`  
-**Build Artifact:** `dist/ramos-maps-connector-v1.0.6.zip` (111.1 KB, 36 runtime files)  
+**Build Artifact:** `dist/ramos-maps-connector-v1.0.6.zip` (124.1 KB, 37 runtime files)  
 **Status:** **PILOT READY — CODE FROZEN**  
 **Date:** September 4, 2026
 
@@ -12,8 +12,8 @@
 RAMOS `v1.0.6` has passed all release qualification gates. All core modules—including Google Maps card discovery, sequential candidate queue, Website Intelligence crawler, people & decision maker extraction, confidence engine, lead scoring, deduplication, and export engines—are **permanently frozen**.
 
 ### Test & Parity Results
-- **Automated Test Suites:** **162 passing**, 0 failing (14 Maps regression tests, 143 Website Intelligence tests, 5 Phase 9 QA matrix tests).
-- **Parity Verification:** Source-to-package file parity passed (100% match across all 36 runtime files).
+- **Automated Test Suites:** **171 passing**, 0 failing (14 Maps regression tests, 143 Website Intelligence tests, 14 QA matrix tests).
+- **Parity Verification:** Source-to-package file parity passed (100% match across all 37 runtime files).
 - **Consistency Verification:** Consistency checker passed with 0 secret exposures and valid doc manifests.
 - **Real Chrome Workflow Verification:** Verified end-to-end extraction, enrichment, and physical spreadsheet generation on disk (`.xlsx` and `.csv`).
 - **Benchmark Stability:** Linear throughput (~164 ms/lead) across 10, 25, 50, and 100 leads with instant 26 ms cancellation response time.

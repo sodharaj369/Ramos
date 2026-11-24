@@ -13,7 +13,7 @@ Operating 100% inside Google Chrome, RAMOS has **zero dependencies** on external
 - **Architecture Baseline**:
   - `v1.0.5`: Authoritative, frozen Google Maps extraction engine.
   - `v1.0.6`: Current integrated release candidate with Website Intelligence (Phases 0–9).
-- **Automated Tests**: **162 passing tests / 0 failures** (`npm test`).
+- **Automated Tests**: **171 passing tests / 0 failures** (`npm test`).
 
 ---
 
@@ -26,6 +26,7 @@ Operating 100% inside Google Chrome, RAMOS has **zero dependencies** on external
 5. **Score Lead Quality**: Deterministically scores lead viability (0–100) and assigns actionable sales qualification tiers (`HIGH`, `MEDIUM`, `LOW`).
 6. **Deduplicate Leads**: Conservative, precision-first deduplication by `place_id`, domain+phone, or domain+name similarity without merging separate branch locations.
 7. **Export Clean Datasets**: Direct, 100% browser-native export to 24-column Maps CSV/XLSX or 34-column Enriched CSV/XLSX (with relational "People" sheet) via `chrome.downloads`.
+8. **Master File Merger & Deduplicator**: Upload 2 or more `.csv` or `.xlsx` files simultaneously to merge third-party lead exports, normalize headers, and deduplicate with zero data loss.
 
 ---
 
@@ -46,6 +47,7 @@ Operating 100% inside Google Chrome, RAMOS has **zero dependencies** on external
 | :--- | :--- | :--- | :--- |
 | **Maps Standalone** | CSV & XLSX | 24 Columns (1 sheet) | Frozen baseline export with core physical business details directly from Google Maps. |
 | **Enriched Leads** | CSV & XLSX | 34 Columns + 2-Sheet XLSX | Enriched export including lead scores, decision makers, social profiles, and a dedicated "People" sheet. |
+| **Master Merged Leads** | CSV & XLSX | 34 Columns + 2-Sheet XLSX | Unified deduplicated master list created from 2 or more uploaded lead files. |
 
 ---
 
@@ -61,7 +63,7 @@ Operating 100% inside Google Chrome, RAMOS has **zero dependencies** on external
 ## Verification & Testing Commands
 
 ```powershell
-# Run all 162 unit & regression tests
+# Run all 171 unit & regression tests
 npm test
 
 # Check project consistency & hygiene

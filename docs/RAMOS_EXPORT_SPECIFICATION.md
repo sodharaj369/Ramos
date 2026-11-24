@@ -123,6 +123,8 @@ Available in the 2-sheet OOXML workbook generated via `XlsxBuilder.buildWebsiteX
 | **Maps Standalone** | XLSX | `buildXlsx(leads)` | `extension/shared/xlsx-builder.js` | 24 columns (1 sheet) |
 | **Enriched Leads** | CSV | `generateWebsiteCSV(leads)` | `extension/popup.js` | 34 columns |
 | **Enriched Leads** | XLSX | `buildWebsiteXlsx(leads)` | `extension/shared/xlsx-builder.js` | 34 cols (Sheet 1) + 7 cols (Sheet 2) |
+| **Master Merged Leads** | CSV | `generateWebsiteCSV(leads)` | `extension/popup.js` | 34 columns |
+| **Master Merged Leads** | XLSX | `buildWebsiteXlsx(leads)` | `extension/shared/xlsx-builder.js` | 34 cols (Sheet 1) + 7 cols (Sheet 2) |
 
 ### 5.1 Download Pipeline
 Both CSV and XLSX export flows route through the unified messaging bridge:
