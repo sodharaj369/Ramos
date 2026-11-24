@@ -1710,6 +1710,113 @@
     el.webStopBtn?.addEventListener("click", () => stopWebsiteExtraction());
     el.webDownloadXlsxBtn?.addEventListener("click", () => exportWebsiteLead("xlsx"));
     el.webDownloadCsvBtn?.addEventListener("click", () => exportWebsiteLead("csv"));
+
+    // Merge & Dedup Actions
+    el.mergeDropzone?.addEventListener("click", () => el.mergeFileInput?.click());
+    el.mergeFileInput?.addEventListener("change", (e) => {
+      if (e.target.files) addMergeFiles(e.target.files);
+      e.target.value = "";
+    });
+    el.mergeDropzone?.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      el.mergeDropzone.classList.add("dragover");
+    });
+    el.mergeDropzone?.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      el.mergeDropzone.classList.remove("dragover");
+    });
+    el.mergeDropzone?.addEventListener("drop", (e) => {
+      e.preventDefault();
+      el.mergeDropzone.classList.remove("dragover");
+      if (e.dataTransfer?.files) addMergeFiles(e.dataTransfer.files);
+    });
+    el.mergeClearAllBtn?.addEventListener("click", () => {
+      stagedMergeFiles = [];
+      if (el.mergeFileInput) el.mergeFileInput.value = "";
+      renderStagedFiles();
+    });
+    el.mergeRunBtn?.addEventListener("click", () => runMerge());
+    el.mergeDownloadXlsxBtn?.addEventListener("click", () => exportMasterMerged("xlsx"));
+    el.mergeDownloadCsvBtn?.addEventListener("click", () => exportMasterMerged("csv"));
+
+    // Auto-download preference & importLimit persistence
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["importLimit", "autoDownloadCsv"], (data) => {
+        if (data && data.importLimit && el.importLimit) {
+          el.importLimit.value = String(data.importLimit);
+        }
+        if (data && typeof data.autoDownloadCsv === "boolean" && el.autoDownloadCsv) {
+          el.autoDownloadCsv.checked = data.autoDownloadCsv;
+        }
+      });
+      el.importLimit?.addEventListener("change", () => {
+        chrome.storage.local.set({ importLimit: el.importLimit.value });
+      });
+      el.autoDownloadCsv?.addEventListener("change", () => {
+        chrome.storage.local.set({ autoDownloadCsv: el.autoDownloadCsv.checked });
+      });
+    }
+  }
+
+  function restoreDiscoveryStateFromBackground() {
+    if (typeof chrome === "undefined" || !chrome.runtime || typeof chrome.runtime.sendMessage !== "function") return;
+
+    chrome.runtime.sendMessage({ type: "GET_DISCOVERY_STATE" }, (bgRes) => {
+      if (chrome.runtime.lastError || !bgRes || !bgRes.ok) return;
+
+      const leads = bgRes.records || bgRes.leads || [];
+
+      if (bgRes.requestedLimit && el.importLimit) {
+        el.importLimit.value = String(bgRes.requestedLimit);
+      }
+
+      // 1. Extraction actively running in background: restore progress view
+      if (bgRes.running) {
+        resetDiscoveryWatchdog();
+        if (el.progressContainer) el.progressContainer.classList.remove("hidden");
+        if (el.extractBtn) el.extractBtn.classList.add("hidden");
+        if (el.stopBtn) el.stopBtn.classList.remove("hidden");
+        if (el.resultSummary) el.resultSummary.classList.add("hidden");
+
+        const target = Number(el.importLimit?.value) || 10;
+        const total = bgRes.stats?.discovered || bgRes.cardCount || target;
+        const readyCount = bgRes.readyCount || (bgRes.stats && bgRes.stats.ready) || leads.length;
+        const pct = total > 0 ? Math.min(100, Math.max(5, Math.round((readyCount / total) * 100))) : 5;
+
+        if (el.progressBar) el.progressBar.style.width = `${pct}%`;
+        if (el.progressText) el.progressText.textContent = `Extracting ${readyCount} / ${total} leads...`;
+
+        if (leads.length > 0) {
+          currentExtractedLeads = leads;
+        }
+        return;
+      }
+
+      // 2. Extraction complete with exportable leads: restore results & download controls
+      if (leads.length > 0) {
+        currentExtractedLeads = leads;
+        handleDiscoveryTerminalState({
+          status: bgRes.status || "completed",
+          leads: leads,
+          stats: bgRes.stats || {
+            discovered: leads.length,
+            qualified: leads.length,
+            enriched: leads.length,
+            failed: 0,
+            ready: leads.length,
+          },
+          autoDownloaded: Boolean(bgRes.autoDownloaded),
+        });
+        if (el.extractBtn) {
+          el.extractBtn.textContent = "Run Discovery Again";
+          el.extractBtn.classList.remove("hidden");
+          el.extractBtn.disabled = false;
+        }
+        if (el.stopBtn) el.stopBtn.classList.add("hidden");
+        if (el.downloadCsvBtn) el.downloadCsvBtn.disabled = false;
+        if (el.downloadXlsxBtn) el.downloadXlsxBtn.disabled = false;
+      }
+    });
   }
 
   function initPopup() {
